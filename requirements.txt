@@ -1,0 +1,10 @@
+# Neuro SAN orchestrator
+neuro-san>=0.6.50
+
+# FOSSA + GitHub API clients
+httpx>=0.28.1
+PyYAML>=6.0.2
+python-dotenv>=1.0.1
+
+# Optional: direct Mistral SDK (for future extensions)
+# mistralai>=1.0.0

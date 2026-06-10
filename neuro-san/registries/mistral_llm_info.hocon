@@ -1,0 +1,64 @@
+# Mistral + Devstral via OpenAI-compatible API (https://docs.mistral.ai/api)
+# Used with OPENAI_API_KEY / MISTRAL_API_KEY and openai_api_base below.
+
+{
+  "default_config": {
+    "openai_api_base": "https://api.mistral.ai/v1",
+    "temperature": 0.2
+  },
+
+  "mistral-large-latest": {
+    "class": "openai",
+    "model_info_url": "https://docs.mistral.ai/models/mistral-large-latest",
+    "modalities": {
+      "input": ["text"],
+      "output": ["text"]
+    },
+    "capabilities": ["tools"],
+    "context_window_size": 128000,
+    "max_output_tokens": 8192,
+    "knowledge_cutoff": "unknown"
+  },
+
+  "mistral-small-latest": {
+    "class": "openai",
+    "use_model_name": "mistral-small-latest",
+    "model_info_url": "https://docs.mistral.ai/models/mistral-small-latest",
+    "modalities": {
+      "input": ["text"],
+      "output": ["text"]
+    },
+    "capabilities": ["tools"],
+    "context_window_size": 128000,
+    "max_output_tokens": 8192,
+    "knowledge_cutoff": "unknown"
+  },
+
+  "mistral-small-2506": {
+    "class": "openai",
+    "use_model_name": "mistral-small-2506",
+    "model_info_url": "https://docs.mistral.ai/models/mistral-small-3-2",
+    "modalities": {
+      "input": ["text"],
+      "output": ["text"]
+    },
+    "capabilities": ["tools"],
+    "context_window_size": 128000,
+    "max_output_tokens": 8192,
+    "knowledge_cutoff": "unknown"
+  },
+
+  "labs-devstral-small-2512": {
+    "class": "openai",
+    "use_model_name": "labs-devstral-small-2512",
+    "model_info_url": "https://docs.mistral.ai/models/devstral-small-2",
+    "modalities": {
+      "input": ["text"],
+      "output": ["text"]
+    },
+    "capabilities": ["tools"],
+    "context_window_size": 256000,
+    "max_output_tokens": 8192,
+    "knowledge_cutoff": "unknown"
+  }
+}

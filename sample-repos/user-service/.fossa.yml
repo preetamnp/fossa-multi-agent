@@ -1,0 +1,8 @@
+version: 3
+
+project:
+  name: user-service
+
+revision:
+  type: git
+  branch: main

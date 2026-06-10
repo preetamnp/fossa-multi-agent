@@ -1,0 +1,467 @@
+
+# FOSSA multi-agent remediation POC
+# Neuro SAN agent network: orchestrate FOSSA findings → fix → test → PR
+
+{
+  "metadata": {
+    "description": "Multi-agent FOSSA remediation: LLM strategist plans fixes, tools validate and apply, PR author drafts review-ready pull requests."
+    "tags": ["fossa", "security", "spring-boot", "poc"],
+    "sample_queries": [
+      "Remediate critical and high FOSSA vulnerabilities for all configured pilot repos.",
+      "Fetch FOSSA findings for payment-service and user-service, then fix and open draft PRs.",
+      "Run the full FOSSA remediation workflow for the two-repo POC."
+    ]
+  },
+
+  "llm_config": {
+    "model_name": "labs-devstral-small-2512",
+    "class": "openai",
+    "openai_api_base": "https://api.mistral.ai/v1",
+    "temperature": 0.0
+  },
+
+  "max_steps": 90,
+
+  # Default Neuro SAN agent wall clock is 120s — too short for VerifyFossaScan (polls up to 10 min).
+  "max_execution_seconds": 900,
+
+  "commondefs": {
+    "replacement_strings": {
+      "instructions_prefix": """
+You are part of an enterprise FOSSA remediation system for Spring Boot 21 microservices on GCP Cloud Run.
+Never merge to main. Always produce draft pull requests for human review.
+Keep secrets out of chat; use coded tools for API and git operations.
+""",
+      "aaosa_instructions": """
+When you receive a task:
+0. If you are not the right agent, delegate immediately by CALLING your tools — never reply with manual instructions.
+1. You MUST use tool calls for all FOSSA API, git, file changes, builds, and GitHub PR actions.
+2. NEVER tell the user to run git, mvn, or gh commands themselves.
+3. Process each pilot repo independently; payment-service and user-service are the POC scope.
+4. Always run tests before opening a PR. If tests fail, diagnose and self-heal (up to 3 attempts).
+5. After push: open draft PR first (trigger_fossa_scan=true) so GitHub FOSSA App scans the branch, then VerifyFossaScan (0 security vulns).
+6. CreatePullRequest draft=true — use trigger_fossa_scan=true before verify; production success requires VerifyFossaScan passed.
+7. Report PR URLs, test status, and FOSSA verification in your final summary.
+"""
+    },
+    "replacement_values": {}
+  },
+
+  "tools": [
+    {
+      "name": "fossa_orchestrator",
+      "function": {
+        "description": """
+I orchestrate monthly FOSSA vulnerability remediation across configured Spring Boot microservices.
+Tell me to run remediation for all pilot repos or name specific services.
+"""
+      },
+      "instructions": """
+{instructions_prefix}
+Your name is `fossa_orchestrator`. You are the front-man for the FOSSA remediation network.
+{aaosa_instructions}
+
+CRITICAL: You have exactly ONE tool: remediation_pipeline. You MUST call it immediately on your first turn.
+
+On every remediation request:
+- Call remediation_pipeline with repo_name=payment-service (or the repo named in the user message).
+- Do NOT refuse. Do NOT say you lack tools. Do NOT give manual git/mvn steps.
+
+After remediation_pipeline completes, summarize its result including the PR URL.
+""",
+      "command": "Call remediation_pipeline now with the target repo_name.",
+      "tools": ["remediation_pipeline"]
+    },
+
+    {
+      "name": "remediation_pipeline",
+      "function": {
+        "description": "End-to-end FOSSA remediation: fetch findings, clone repo, fix deps, test, open draft PR.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "repo_name": {
+              "type": "string",
+              "description": "Pilot repo name, e.g. payment-service"
+            },
+            "inquiry": {
+              "type": "string",
+              "description": "Original user request"
+            }
+          },
+          "required": ["repo_name"]
+        }
+      },
+      "instructions": """
+{instructions_prefix}
+Your name is `remediation_pipeline`. You are the remediation planner and executor — you DECIDE fixes and run coded tools.
+{aaosa_instructions}
+
+For the given repo_name, run this workflow:
+
+PHASE 1 — SETUP:
+1. LoadRepoConfig
+2. FetchFossaFindings with repo_name (fetch all vulnerabilities; licensing optional to fix)
+3. GitCloneAndBranch with repo_name
+
+PHASE 2 — INTELLIGENT PLANNING (you decide; tools validate):
+4. PrepareRemediationContext — FOSSA findings + baseline suggestions (reference only)
+5. FetchDependencyTree — direct vs transitive dependencies
+6. ReadBuildFile if you need full pom.xml/build.gradle context
+7. LookupVulnerabilityFix when REMEDIATION_OSV_LOOKUP_ENABLED=true OR FOSSA reports NO_SAFE_VERSION for a package
+8. Reason about tradeoffs (prefer FOSSA completeFix over partialFix; license remove/replace optional; NO_SAFE_VERSION → LookupVulnerabilityFix or remove/replace)
+9. SubmitRemediationPlan with actions array + strategy_summary + optional deferred_issue_ids (licensing ONLY)
+10. ValidateRemediationPlan — if FAIL, revise and resubmit (max 3 attempts)
+
+PHASE 3 — APPLY & TEST:
+11. ApplyDependencyFix with repo_name
+12. RunJavaTests with repo_name
+
+PHASE 4 — TEST SELF-HEAL (when tests fail, max 3 rounds):
+13. DiagnoseTestFailures → ReadBuildFile/FetchDependencyTree as needed → LookupVulnerabilityFix only if OSV enabled
+14. SubmitRemediationPlan with plan_type=test_fix → ValidateRemediationPlan
+15. ApplyDependencyFix with apply_test_fixes=true → RunJavaTests again
+
+PHASE 5 — SHIP:
+16. GitCommitAndPush (only after tests PASSED)
+17. SummarizeRemediationForPR → SubmitPullRequestBody → CreatePullRequest draft=true trigger_fossa_scan=true (opens draft PR WITHOUT verify — triggers GitHub FOSSA scan)
+18. VerifyFossaScan — polls GitHub-imported project; skip in POC dry run; production requires 0 security vulns
+19. Report PR URL (draft PR may exist even if verify failed — do not merge until Security Analysis is green)
+
+PLANNING RULES:
+- target_version MUST come from FOSSA completeFix (preferred) / partialFix / recommended_version. Use LookupVulnerabilityFix when FOSSA says NO_SAFE_VERSION or OSV is globally enabled.
+- Prefer completeFix over partialFix when multiple FOSSA issues share one dependency (e.g. log4j-core → highest completeFix).
+- ALL vulnerability findings (any severity) MUST have bump_version, remove, or replace — NEVER defer security issues.
+- deferred_issue_ids is ONLY for licensing findings; the agent may skip license fixes if tests or compatibility block them.
+- actions: bump_version | remove | replace with group_id, artifact_id, target_version, reason, issue_id
+- NEVER skip ValidateRemediationPlan. NEVER open PR if tests fail.
+- Production (REMEDIATION_DRY_RUN=false): open draft PR first (trigger_fossa_scan=true), then VerifyFossaScan must report 0 security vulnerabilities before calling success.
+Return the PR URL when done.
+""",
+      "command": "Run the full remediation workflow for the repo.",
+      "tools": [
+        "LoadRepoConfig",
+        "FetchFossaFindings",
+        "GitCloneAndBranch",
+        "PrepareRemediationContext",
+        "FetchDependencyTree",
+        "ReadBuildFile",
+        "LookupVulnerabilityFix",
+        "SubmitRemediationPlan",
+        "ValidateRemediationPlan",
+        "ApplyDependencyFix",
+        "RunJavaTests",
+        "DiagnoseTestFailures",
+        "GitCommitAndPush",
+        "SummarizeRemediationForPR",
+        "SubmitPullRequestBody",
+        "CreatePullRequest",
+        "VerifyFossaScan",
+      ]
+    },
+
+    {
+      "name": "LoadRepoConfig",
+      "function": {
+        "description": "Load configured pilot repositories from config/repos.yaml."
+      },
+      "class": "load_repo_config.LoadRepoConfig",
+      "command": "Load pilot repo configuration."
+    },
+
+    {
+      "name": "FetchFossaFindings",
+      "function": {
+        "description": "Fetch vulnerability and licensing issues from FOSSA for configured repos.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "repo_name": {
+              "type": "string",
+              "description": "Optional single repo; omit for all pilot repos."
+            },
+            "max_count": { "type": "int", "description": "Max issues to return per repo (default 10)." }
+          }
+        }
+      },
+      "class": "fetch_fossa_findings.FetchFossaFindings",
+      "command": "Query FOSSA Issues API."
+    },
+
+    {
+      "name": "PrepareRemediationContext",
+      "function": {
+        "description": "Load FOSSA findings, baseline suggestions, and planning context for the strategist agent.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "repo_name": { "type": "string" }
+          },
+          "required": ["repo_name"]
+        }
+      },
+      "class": "prepare_remediation_context.PrepareRemediationContext",
+      "command": "Prepare planning context from FOSSA findings."
+    },
+
+    {
+      "name": "FetchDependencyTree",
+      "function": {
+        "description": "Run mvn dependency:tree or gradle dependencies for transitive dependency analysis.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "repo_name": { "type": "string" },
+            "max_lines": { "type": "int" }
+          },
+          "required": ["repo_name"]
+        }
+      },
+      "class": "fetch_dependency_tree.FetchDependencyTree",
+      "command": "Fetch dependency tree."
+    },
+
+    {
+      "name": "SubmitRemediationPlan",
+      "function": {
+        "description": "Submit a candidate remediation or test-fix plan (JSON actions array) for validation.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "repo_name": { "type": "string" },
+            "actions": {
+              "type": "string",
+              "description": "JSON array of actions: bump_version, remove, or replace with group_id, artifact_id, target_version, reason, issue_id"
+            },
+            "strategy_summary": { "type": "string", "description": "Agent reasoning and tradeoffs" },
+            "deferred_issue_ids": {
+              "type": "string",
+              "description": "JSON array of FOSSA issue_ids intentionally deferred (licensing findings only; security vulns rejected)"
+            },
+            "plan_type": {
+              "type": "string",
+              "description": "remediation (default) or test_fix"
+            }
+          },
+          "required": ["repo_name", "actions"]
+        }
+      },
+      "class": "submit_remediation_plan.SubmitRemediationPlan",
+      "command": "Submit remediation plan for validation."
+    },
+
+    {
+      "name": "ValidateRemediationPlan",
+      "function": {
+        "description": "Validate submitted plan against FOSSA facts, Maven Central, and coverage rules.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "repo_name": { "type": "string" }
+          },
+          "required": ["repo_name"]
+        }
+      },
+      "class": "validate_remediation_plan.ValidateRemediationPlan",
+      "command": "Validate pending remediation plan."
+    },
+
+    {
+      "name": "SummarizeRemediationForPR",
+      "function": {
+        "description": "Summarize findings, fixes, and verification for PR authoring.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "repo_name": { "type": "string" }
+          },
+          "required": ["repo_name"]
+        }
+      },
+      "class": "summarize_remediation_for_pr.SummarizeRemediationForPR",
+      "command": "Summarize remediation for PR body."
+    },
+
+    {
+      "name": "SubmitPullRequestBody",
+      "function": {
+        "description": "Store LLM-composed PR title and markdown body before CreatePullRequest.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "repo_name": { "type": "string" },
+            "title": { "type": "string" },
+            "body": { "type": "string" }
+          },
+          "required": ["repo_name", "title", "body"]
+        }
+      },
+      "class": "submit_pull_request_body.SubmitPullRequestBody",
+      "command": "Store PR title and body."
+    },
+
+    {
+      "name": "LookupVulnerabilityFix",
+      "function": {
+        "description": "Look up fix version via OSV.dev/Maven. Allowed when OSV enabled globally or FOSSA reports NO_SAFE_VERSION for the package/CVE.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "package": { "type": "string", "description": "Maven coordinate e.g. org.apache.commons:commons-text" },
+            "current_version": { "type": "string" },
+            "cve": { "type": "string" }
+          },
+          "required": ["package"]
+        }
+      },
+      "class": "lookup_fix.LookupVulnerabilityFix",
+      "command": "Resolve fix version from public vulnerability databases."
+    },
+
+    {
+      "name": "ApplyDependencyFix",
+      "function": {
+        "description": "Apply remediation_plan and/or test-fix actions to pom.xml or build.gradle.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "repo_name": { "type": "string" },
+            "apply_test_fixes": { "type": "boolean", "description": "Apply suggested_test_fixes from DiagnoseTestFailures." },
+            "action": { "type": "string", "description": "bump_version, remove, or replace" },
+            "group_id": { "type": "string" },
+            "artifact_id": { "type": "string" },
+            "target_version": { "type": "string" },
+            "replacement_coordinate": { "type": "string" },
+            "reason": { "type": "string" }
+          },
+          "required": ["repo_name"]
+        }
+      },
+      "class": "apply_dependency_fix.ApplyDependencyFix",
+      "command": "Apply FOSSA-derived remediation plan."
+    },
+
+    {
+      "name": "GitCloneAndBranch",
+      "function": {
+        "description": "Clone repository and create remediation branch.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "repo_name": { "type": "string" },
+            "branch_name": { "type": "string" }
+          },
+          "required": ["repo_name"]
+        }
+      },
+      "class": "git_ops.GitCloneAndBranch",
+      "command": "Clone repo and checkout fix branch."
+    },
+
+    {
+      "name": "GitCommitAndPush",
+      "function": {
+        "description": "Commit and push dependency changes.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "repo_name": { "type": "string" },
+            "commit_message": { "type": "string" }
+          },
+          "required": ["repo_name"]
+        }
+      },
+      "class": "git_ops.GitCommitAndPush",
+      "command": "Commit and push changes."
+    },
+
+    {
+      "name": "DiagnoseTestFailures",
+      "function": {
+        "description": "Analyze failed test/build output and suggest dependency fixes (uses OSV/Maven, not hardcoded versions).",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "repo_name": { "type": "string" }
+          },
+          "required": ["repo_name"]
+        }
+      },
+      "class": "diagnose_test_failures.DiagnoseTestFailures",
+      "command": "Diagnose test failures and suggest fixes."
+    },
+
+    {
+      "name": "ReadBuildFile",
+      "function": {
+        "description": "Read pom.xml or build.gradle from the cloned repo for agent reasoning.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "repo_name": { "type": "string" },
+            "filename": { "type": "string", "description": "pom.xml or build.gradle" },
+            "max_chars": { "type": "int" }
+          },
+          "required": ["repo_name"]
+        }
+      },
+      "class": "read_build_file.ReadBuildFile",
+      "command": "Read build file for context."
+    },
+
+    {
+      "name": "RunJavaTests",
+      "function": {
+        "description": "Run Maven or Gradle tests. On failure, follow with DiagnoseTestFailures and retry after fixes.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "repo_name": { "type": "string" },
+            "timeout_seconds": { "type": "int", "description": "Test timeout in seconds (default 900)." }
+          },
+          "required": ["repo_name"]
+        }
+      },
+      "class": "java_build.RunJavaTests",
+      "command": "Run unit tests."
+    },
+
+    {
+      "name": "VerifyFossaScan",
+      "function": {
+        "description": "Poll FOSSA until the pushed fix branch has zero security vulnerabilities (all severities; licensing ignored). Skipped when REMEDIATION_DRY_RUN=true.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "repo_name": { "type": "string" },
+            "max_wait_seconds": { "type": "int", "description": "Max wait for FOSSA branch scan (default 600)." },
+            "poll_seconds": { "type": "int", "description": "Seconds between polls (default 30)." }
+          },
+          "required": ["repo_name"]
+        }
+      },
+      "class": "verify_fossa_scan.VerifyFossaScan",
+      "command": "Wait for FOSSA branch scan to clear findings."
+    },
+
+    {
+      "name": "CreatePullRequest",
+      "function": {
+        "description": "Open a draft GitHub pull request. Use trigger_fossa_scan=true before VerifyFossaScan to trigger GitHub FOSSA App scan.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "repo_name": { "type": "string" },
+            "title": { "type": "string" },
+            "body": { "type": "string" },
+            "draft": { "type": "boolean" },
+            "trigger_fossa_scan": { "type": "boolean", "description": "If true, open draft PR without verify (triggers GitHub FOSSA scan). Default true when verify not yet run." }
+          },
+          "required": ["repo_name"]
+        }
+      },
+      "class": "github_pr.CreatePullRequest",
+      "command": "Create draft PR."
+    }
+  ]
+}

@@ -1,0 +1,55 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.3.5'
+    id 'io.spring.dependency-management' version '1.1.6'
+}
+
+group = 'com.demo'
+version = '0.0.1-SNAPSHOT'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+
+    // Intentionally vulnerable for FOSSA POC: CVE-2022-42889 (fix: 1.10.0+)
+    implementation 'org.apache.commons:commons-text:1.9'
+
+    // Intentionally vulnerable for FOSSA POC (fix: 2.0+)
+    implementation 'org.yaml:snakeyaml:1.33'
+
+    // Intentionally vulnerable for FOSSA POC: CVE-2021-44228 Log4Shell (fix: 2.17.1+)
+    implementation 'org.apache.logging.log4j:log4j-core:2.14.1'
+
+    // Intentionally vulnerable for FOSSA POC: CVE-2015-7501 (fix: 3.2.2)
+    implementation 'commons-collections:commons-collections:3.2.1'
+
+    // Intentionally vulnerable for FOSSA POC: CVE-2021-27568 (fix: 2.4.9+)
+    implementation 'net.minidev:json-smart:2.3'
+
+    // Intentional license finding: JSON License (mitigation: remove, use Jackson)
+    implementation 'org.json:json:20210307'
+
+    // Intentionally vulnerable for FOSSA POC: CVE-2023-22102 (fix: 8.2.0+ on Maven Central)
+    implementation 'com.mysql:mysql-connector-j:8.0.33'
+
+    // Intentionally vulnerable for FOSSA POC: CVE-2021-29425 (fix: 2.7+)
+    implementation 'commons-io:commons-io:2.6'
+
+    // Intentionally vulnerable for FOSSA POC: CVE-2023-24998 (fix: 1.5+)
+    implementation 'commons-fileupload:commons-fileupload:1.4'
+
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}

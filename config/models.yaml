@@ -1,0 +1,22 @@
+# Model assignments for the FOSSA remediation agent network.
+# Actual LLM definitions live in neuro-san/registries/mistral_llm_info.hocon
+
+orchestration:
+  model: mistral-small-latest
+  temperature: 0.2
+  note: Use small model for POC to avoid Mistral API 429 rate limits on free tier
+  agents:
+    - fossa_orchestrator
+    - fossa_analyst
+    - dispatch_coordinator
+    - remediation_reporter
+
+coding:
+  model: labs-devstral-small-2512
+  temperature: 0.1
+  agents:
+    - spring_boot_dev
+
+fallback:
+  model: mistral-small-2506
+  note: Orchestrator fallback if mistral-small-latest is unavailable

@@ -1,0 +1,16 @@
+# FOSSA — GitHub-imported project only for this POC.
+#
+# Do NOT run `fossa analyze` here: CLI uploads create a SECOND project in FOSSA
+# (custom+*/git+github.com/...) separate from the GitHub App project
+# (git+github.com/preetamnp/payment-service) that drives PR Security Analysis checks.
+#
+# Scans come from: GitHub App on push/PR → config/repos.yaml project_locator.
+
+version: 3
+
+project:
+  name: payment-service
+
+revision:
+  type: git
+  branch: main

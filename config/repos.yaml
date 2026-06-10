@@ -1,0 +1,29 @@
+repos:
+- name: payment-service
+  description: "Spring Boot 21 payment microservice (Maven) \u2014 sample-repos/payment-service"
+  github:
+    org: preetamnp
+    repo: payment-service
+    default_branch: main
+  fossa:
+    project_locator: git+github.com/preetamnp/payment-service
+  build:
+    tool: maven
+    java_version: '21'
+    test_command: ./mvnw -q test
+    dependency_files:
+    - pom.xml
+- name: user-service
+  description: "Spring Boot 21 user microservice (Gradle) \u2014 sample-repos/user-service"
+  github:
+    org: preetamnp
+    repo: user-service
+    default_branch: main
+  fossa:
+    project_locator: git+github.com/preetamnp/user-service
+  build:
+    tool: gradle
+    java_version: '21'
+    test_command: ./gradlew test
+    dependency_files:
+    - build.gradle
