@@ -1,6 +1,9 @@
 # Neuro SAN orchestrator
 neuro-san>=0.6.50
 
+# Neuro SAN Studio web UI (NSFlow at http://localhost:4173)
+neuro-san-studio>=0.3.2
+
 # FOSSA + GitHub API clients
 httpx>=0.28.1
 PyYAML>=6.0.2
