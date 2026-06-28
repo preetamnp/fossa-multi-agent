@@ -10,7 +10,7 @@ from typing import Any
 
 from neuro_san.interfaces.coded_tool import CodedTool
 
-from _config import get_repo_by_name
+from _config import MAX_TEST_HEAL_ATTEMPTS, get_repo_by_name, test_heal_attempts
 from remediation_log import report_progress
 
 
@@ -68,12 +68,21 @@ class RunJavaTests(CodedTool):
             sly_data.setdefault("test_fix_attempts", {})[repo_name] = 0
             return f"Tests PASSED for {repo_name}."
 
+        attempts = test_heal_attempts(sly_data, repo_name)
         summary = "\n".join(f"  - {line}" for line in error_lines[:10]) or "  - (see build log tail in test_results)"
+        if attempts >= MAX_TEST_HEAL_ATTEMPTS:
+            return (
+                f"Tests FAILED for {repo_name} (exit {result.returncode}). "
+                f"Test self-heal limit reached ({MAX_TEST_HEAL_ATTEMPTS} attempts).\n"
+                f"Key errors:\n{summary}\n\n"
+                "Escalate to human review; do not open PR."
+            )
         return (
             f"Tests FAILED for {repo_name} (exit {result.returncode}).\n"
             f"Key errors:\n{summary}\n\n"
-            "NEXT: Call DiagnoseTestFailures, reason about the cause, apply a fix with ApplyDependencyFix, "
-            "then call RunJavaTests again (up to 3 self-heal attempts)."
+            f"NEXT: Call DiagnoseTestFailures, reason about the cause, apply a fix with ApplyDependencyFix, "
+            f"then call RunJavaTests again "
+            f"({attempts}/{MAX_TEST_HEAL_ATTEMPTS} self-heal attempt(s) used so far)."
         )
 
     @staticmethod

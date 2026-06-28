@@ -211,6 +211,76 @@ def ensure_remediation_mode_in_sly_data(sly_data: dict[str, Any]) -> None:
         sly_data["osv_lookup_enabled"] = is_osv_lookup_enabled(sly_data)
 
 
+MAX_PLAN_VALIDATION_ATTEMPTS = 3
+MAX_TEST_HEAL_ATTEMPTS = 3
+DEFAULT_LLM_MODEL = "labs-devstral-small-2512"
+
+
+def resolve_fix_branch_name(repo_name: str, args: dict[str, Any] | None = None) -> tuple[str, str | None]:
+    """Return a unique fix branch name; ignore agent-supplied branch_name by default."""
+    args = args or {}
+    requested = (args.get("branch_name") or "").strip() or None
+    allow_custom = os.environ.get("ALLOW_AGENT_BRANCH_NAME", "false").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if allow_custom and requested:
+        return requested, None
+
+    fresh = args.get("fresh_branch")
+    if fresh is None:
+        fresh = os.environ.get("FOSSA_FRESH_BRANCH", "true").lower() in {"1", "true", "yes"}
+    branch = default_fix_branch_name(repo_name) if fresh else f"fix/fossa-auto-{repo_name}"
+    ignored = requested if requested and requested != branch else None
+    return branch, ignored
+
+
+def plan_validation_attempts(sly_data: dict[str, Any], repo_name: str) -> int:
+    return int((sly_data.get("plan_validation_attempts") or {}).get(repo_name, 0))
+
+
+def increment_plan_validation_attempts(sly_data: dict[str, Any], repo_name: str) -> int:
+    attempts = plan_validation_attempts(sly_data, repo_name) + 1
+    sly_data.setdefault("plan_validation_attempts", {})[repo_name] = attempts
+    return attempts
+
+
+def reset_plan_validation_attempts(sly_data: dict[str, Any], repo_name: str) -> None:
+    sly_data.setdefault("plan_validation_attempts", {})[repo_name] = 0
+
+
+def test_heal_attempts(sly_data: dict[str, Any], repo_name: str) -> int:
+    return int((sly_data.get("test_fix_attempts") or {}).get(repo_name, 0))
+
+
+def build_default_sly_data() -> dict[str, Any]:
+    """Default session state for NSFlow and CLI clients (includes full llm_config)."""
+    ensure_env_loaded()
+    api_key = (
+        os.environ.get("OPENAI_API_KEY", "").strip()
+        or os.environ.get("MISTRAL_API_KEY", "").strip()
+    )
+    if not api_key:
+        raise ValueError("OPENAI_API_KEY or MISTRAL_API_KEY must be set.")
+
+    model_name = os.environ.get("REMEDIATION_LLM_MODEL", DEFAULT_LLM_MODEL).strip() or DEFAULT_LLM_MODEL
+    api_base = os.environ.get("OPENAI_API_BASE", "").strip() or "https://api.mistral.ai/v1"
+
+    return {
+        "dry_run": is_remediation_dry_run(None),
+        "osv_lookup_enabled": is_osv_lookup_enabled(None),
+        "llm_config": {
+            "model_name": model_name,
+            "class": "openai",
+            "openai_api_key": api_key,
+            "openai_api_base": api_base,
+            "temperature": 0.0,
+        },
+    }
+
+
 def ensure_llm_config_in_sly_data(sly_data: dict[str, Any]) -> None:
     """Propagate Mistral/OpenAI credentials into sly_data for nested LLM agents."""
     ensure_env_loaded()
@@ -224,3 +294,11 @@ def ensure_llm_config_in_sly_data(sly_data: dict[str, Any]) -> None:
     api_base = os.environ.get("OPENAI_API_BASE", "").strip() or "https://api.mistral.ai/v1"
     if not llm_config.get("openai_api_base"):
         llm_config["openai_api_base"] = api_base
+    if not llm_config.get("model_name"):
+        llm_config["model_name"] = (
+            os.environ.get("REMEDIATION_LLM_MODEL", DEFAULT_LLM_MODEL).strip() or DEFAULT_LLM_MODEL
+        )
+    if not llm_config.get("class"):
+        llm_config["class"] = "openai"
+    if "temperature" not in llm_config:
+        llm_config["temperature"] = 0.0

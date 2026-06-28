@@ -54,33 +54,23 @@ fi
 
 mkdir -p logs
 
-python - <<'PY' > "${SLY_DATA_FILE}"
-import json
-import os
+python "${ROOT}/scripts/build_sly_data.py" > "${SLY_DATA_FILE}"
 
-dry_run = os.environ.get("REMEDIATION_DRY_RUN", "true").strip().lower() not in {"0", "false", "no", "off"}
-osv_lookup = os.environ.get("REMEDIATION_OSV_LOOKUP_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
-
-print(
-    json.dumps(
-        {
-            "dry_run": dry_run,
-            "osv_lookup_enabled": osv_lookup,
-            "llm_config": {
-                "openai_api_key": os.environ["OPENAI_API_KEY"],
-                "openai_api_base": os.environ.get("OPENAI_API_BASE", "https://api.mistral.ai/v1"),
-            },
-        },
-        indent=2,
-    )
-)
-PY
-
-if lsof -ti ":${NSFLOW_PORT}" >/dev/null 2>&1; then
-  echo "NSFlow UI already running on http://localhost:${NSFLOW_PORT}/"
-else
-  echo "Starting NSFlow on http://localhost:${NSFLOW_PORT}/ ..."
+NSFLOW_URL="http://localhost:${NSFLOW_PORT}/"
+if lsof -ti ":${NSFLOW_PORT}" -sTCP:LISTEN >/dev/null 2>&1; then
+  if curl -sf --max-time 3 "${NSFLOW_URL}" >/dev/null 2>&1; then
+    echo ""
+    echo "NSFlow is already running at ${NSFLOW_URL}"
+    echo "  Paste Sly Data from: ${SLY_DATA_FILE}"
+    echo "  To restart the UI: ./scripts/stop_studio.sh && ./scripts/run_studio.sh"
+    exit 0
+  fi
+  echo "Port ${NSFLOW_PORT} is in use but NSFlow is not responding."
+  echo "  Freeing the port and starting a fresh NSFlow instance..."
+  "${ROOT}/scripts/stop_studio.sh"
 fi
+
+echo "Starting NSFlow on ${NSFLOW_URL} ..."
 
 echo ""
 echo "══════════════════════════════════════════════════════════════"
@@ -94,7 +84,7 @@ echo "   (sidebar / network picker — must match manifest.hocon)"
 echo ""
 echo "3. Open the  Sly Data  tab and paste JSON from:"
 echo "      ${SLY_DATA_FILE}"
-echo "   This sets dry_run, osv_lookup, and Mistral llm_config (required)."
+echo "   This sets dry_run, osv_lookup, model_name, and Mistral llm_config (required for nested agents)."
 echo ""
 echo "4. Open the  Chat  tab and send, for example:"
 echo '      Remediate all FOSSA security vulnerabilities for payment-service.'

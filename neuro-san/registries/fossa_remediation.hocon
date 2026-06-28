@@ -102,7 +102,7 @@ For the given repo_name, run this workflow:
 PHASE 1 — SETUP:
 1. LoadRepoConfig
 2. FetchFossaFindings with repo_name (fetch all vulnerabilities; licensing optional to fix)
-3. GitCloneAndBranch with repo_name
+3. GitCloneAndBranch with repo_name only (do NOT pass branch_name — the tool assigns a unique timestamped branch)
 
 PHASE 2 — INTELLIGENT PLANNING (you decide; tools validate):
 4. PrepareRemediationContext — FOSSA findings + baseline suggestions (reference only)
@@ -344,12 +344,11 @@ Return the PR URL when done.
     {
       "name": "GitCloneAndBranch",
       "function": {
-        "description": "Clone repository and create remediation branch.",
+        "description": "Clone repository and create a unique timestamped remediation branch (branch name is assigned by the tool).",
         "parameters": {
           "type": "object",
           "properties": {
-            "repo_name": { "type": "string" },
-            "branch_name": { "type": "string" }
+            "repo_name": { "type": "string" }
           },
           "required": ["repo_name"]
         }

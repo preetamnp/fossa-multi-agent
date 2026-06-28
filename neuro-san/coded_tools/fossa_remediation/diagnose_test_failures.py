@@ -9,14 +9,14 @@ from typing import Any
 
 from neuro_san.interfaces.coded_tool import CodedTool
 
-from _config import is_osv_lookup_enabled
+from _config import MAX_TEST_HEAL_ATTEMPTS, is_osv_lookup_enabled
 from lookup_fix import LookupVulnerabilityFix, parse_maven_coordinate
 
 
 class DiagnoseTestFailures(CodedTool):
     """Parse test/build output and surefire reports; suggest fixes via pom inspection + OSV/Maven lookup."""
 
-    MAX_ATTEMPTS = 3
+    MAX_ATTEMPTS = MAX_TEST_HEAL_ATTEMPTS
 
     async def async_invoke(self, args: dict[str, Any], sly_data: dict[str, Any]) -> Any:
         repo_name = args.get("repo_name")
