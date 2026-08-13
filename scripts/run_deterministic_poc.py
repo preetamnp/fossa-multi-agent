@@ -25,7 +25,7 @@ from diagnose_test_failures import DiagnoseTestFailures  # noqa: E402
 from fetch_fossa_findings import FetchFossaFindings  # noqa: E402
 from github_pr import CreatePullRequest  # noqa: E402
 from git_ops import GitCloneAndBranch, GitCommitAndPush  # noqa: E402
-from java_build import RunJavaTests  # noqa: E402
+from java_build import CompileJava, RunJavaTests  # noqa: E402
 from load_repo_config import LoadRepoConfig  # noqa: E402
 from plan_remediation import PlanRemediationActions  # noqa: E402
 from verify_fossa_scan import VerifyFossaScan  # noqa: E402
@@ -60,6 +60,11 @@ async def main() -> int:
         return 1
 
     await run_step("ApplyDependencyFix", ApplyDependencyFix(), {"repo_name": REPO}, sly_data)
+    await run_step("CompileJava", CompileJava(), {"repo_name": REPO}, sly_data)
+    compile = (sly_data.get("compile_results") or {}).get(REPO, {})
+    if not compile.get("passed"):
+        print("ERROR: Compile failed after applying dependency fixes.")
+        return 1
 
     tests = RunJavaTests()
     diagnose = DiagnoseTestFailures()
@@ -81,6 +86,7 @@ async def main() -> int:
             {"repo_name": REPO, "apply_test_fixes": True},
             sly_data,
         )
+        await run_step("CompileJava", CompileJava(), {"repo_name": REPO}, sly_data)
 
     await run_step(
         "GitCommitAndPush",

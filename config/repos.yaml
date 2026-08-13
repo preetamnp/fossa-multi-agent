@@ -11,6 +11,7 @@ repos:
     tool: maven
     java_version: '21'
     test_command: ./mvnw -q test
+    compile_command: ./mvnw -q -DskipTests compile
     dependency_files:
     - pom.xml
 - name: user-service
@@ -25,5 +26,6 @@ repos:
     tool: gradle
     java_version: '21'
     test_command: ./gradlew test
+    compile_command: ./gradlew -q compileJava
     dependency_files:
     - build.gradle

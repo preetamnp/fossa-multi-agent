@@ -22,6 +22,7 @@ class SummarizeRemediationForPR(CodedTool):
         meta = (sly_data.get("remediation_plan_meta") or {}).get(repo_name) or {}
         branch = (sly_data.get("repo_branches") or {}).get(repo_name)
         test_result = (sly_data.get("test_results") or {}).get(repo_name) or {}
+        compile_result = (sly_data.get("compile_results") or {}).get(repo_name) or {}
 
         payload = {
             "repo_name": repo_name,
@@ -47,6 +48,7 @@ class SummarizeRemediationForPR(CodedTool):
                 if item.get("category") == "licensing"
             ],
             "changes_applied": fixes,
+            "compile_passed": bool(compile_result.get("passed")),
             "tests_passed": bool(test_result.get("passed")),
             "fossa_verify_passed": bool(verify.get("passed")),
             "fossa_revision": verify.get("revision"),

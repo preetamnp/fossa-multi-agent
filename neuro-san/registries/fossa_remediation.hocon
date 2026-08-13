@@ -107,7 +107,7 @@ PHASE 1 — SETUP:
 PHASE 2 — INTELLIGENT PLANNING (you decide; tools validate):
 4. PrepareRemediationContext — FOSSA findings + baseline suggestions (reference only)
 5. FetchDependencyTree — direct vs transitive dependencies
-6. ReadBuildFile if you need full pom.xml/build.gradle context
+6. ReadBuildFile or ReadRepoFile (relative_path) if you need pom.xml/build.gradle or other repo files
 7. LookupVulnerabilityFix when REMEDIATION_OSV_LOOKUP_ENABLED=true OR FOSSA reports NO_SAFE_VERSION for a package
 8. Reason about tradeoffs (prefer FOSSA completeFix over partialFix; license remove/replace optional; NO_SAFE_VERSION → LookupVulnerabilityFix or remove/replace)
 9. SubmitRemediationPlan with actions array + strategy_summary + optional deferred_issue_ids (licensing ONLY)
@@ -115,12 +115,13 @@ PHASE 2 — INTELLIGENT PLANNING (you decide; tools validate):
 
 PHASE 3 — APPLY & TEST:
 11. ApplyDependencyFix with repo_name
-12. RunJavaTests with repo_name
+12. CompileJava with repo_name (fast compile check before tests)
+13. RunJavaTests with repo_name
 
 PHASE 4 — TEST SELF-HEAL (when tests fail, max 3 rounds):
-13. DiagnoseTestFailures → ReadBuildFile/FetchDependencyTree as needed → LookupVulnerabilityFix only if OSV enabled
+13. DiagnoseTestFailures → ReadRepoFile/ReadBuildFile/FetchDependencyTree as needed → LookupVulnerabilityFix only if OSV enabled
 14. SubmitRemediationPlan with plan_type=test_fix → ValidateRemediationPlan
-15. ApplyDependencyFix with apply_test_fixes=true → RunJavaTests again
+15. ApplyDependencyFix with apply_test_fixes=true → CompileJava → RunJavaTests again
 
 PHASE 5 — SHIP:
 16. GitCommitAndPush (only after tests PASSED)
@@ -145,11 +146,13 @@ Return the PR URL when done.
         "GitCloneAndBranch",
         "PrepareRemediationContext",
         "FetchDependencyTree",
+        "ReadRepoFile",
         "ReadBuildFile",
         "LookupVulnerabilityFix",
         "SubmitRemediationPlan",
         "ValidateRemediationPlan",
         "ApplyDependencyFix",
+        "CompileJava",
         "RunJavaTests",
         "DiagnoseTestFailures",
         "GitCommitAndPush",
@@ -391,6 +394,24 @@ Return the PR URL when done.
     },
 
     {
+      "name": "ReadRepoFile",
+      "function": {
+        "description": "Read any repo-relative file from the workspace (paths resolved under clone root; no absolute paths).",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "repo_name": { "type": "string" },
+            "relative_path": { "type": "string", "description": "Path relative to repo root, e.g. pom.xml or src/main/resources/application.yml" },
+            "max_chars": { "type": "int" }
+          },
+          "required": ["repo_name", "relative_path"]
+        }
+      },
+      "class": "read_build_file.ReadRepoFile",
+      "command": "Read file from workspace."
+    },
+
+    {
       "name": "ReadBuildFile",
       "function": {
         "description": "Read pom.xml or build.gradle from the cloned repo for agent reasoning.",
@@ -406,6 +427,23 @@ Return the PR URL when done.
       },
       "class": "read_build_file.ReadBuildFile",
       "command": "Read build file for context."
+    },
+
+    {
+      "name": "CompileJava",
+      "function": {
+        "description": "Compile the workspace project without running tests. Use after ApplyDependencyFix and before RunJavaTests.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "repo_name": { "type": "string" },
+            "timeout_seconds": { "type": "int", "description": "Compile timeout in seconds (default 600)." }
+          },
+          "required": ["repo_name"]
+        }
+      },
+      "class": "java_build.CompileJava",
+      "command": "Compile Java project in workspace."
     },
 
     {

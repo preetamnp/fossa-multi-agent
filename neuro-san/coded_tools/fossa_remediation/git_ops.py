@@ -10,6 +10,7 @@ from typing import Any
 from neuro_san.interfaces.coded_tool import CodedTool
 
 from _config import ensure_work_dir, get_repo_by_name, resolve_fix_branch_name
+from workspace import register_workspace, require_workspace, store_tool_result
 
 
 class GitCloneAndBranch(CodedTool):
@@ -46,8 +47,21 @@ class GitCloneAndBranch(CodedTool):
         await self._run(["git", "-C", str(target), "reset", "--hard", f"origin/{default_branch}"])
         await self._run(["git", "-C", str(target), "checkout", "-B", branch_name])
 
-        sly_data.setdefault("repo_paths", {})[repo_name] = str(target)
-        sly_data.setdefault("repo_branches", {})[repo_name] = branch_name
+        ws = register_workspace(sly_data, repo_name, target, branch_name)
+        if ws is None:
+            return f"Unknown repo_name: {repo_name}"
+
+        result = {
+            "tool": "GitCloneAndBranch",
+            "repo_name": repo_name,
+            "ok": True,
+            "phase": "workspace_init",
+            "branch": branch_name,
+            "root": str(target),
+            "default_branch": default_branch,
+            "github": f"{gh['org']}/{gh['repo']}",
+        }
+        store_tool_result(sly_data, repo_name, "GitCloneAndBranch", result)
 
         message = (
             f"Cloned {gh['org']}/{gh['repo']} to {target} on fresh branch {branch_name} "
@@ -88,10 +102,13 @@ class GitCommitAndPush(CodedTool):
         repo_name = args.get("repo_name")
         commit_message = args.get("commit_message") or f"fix(fossa): security and license remediation for {repo_name}"
 
-        repo_path = (sly_data.get("repo_paths") or {}).get(repo_name)
-        branch_name = (sly_data.get("repo_branches") or {}).get(repo_name)
-        if not repo_path:
-            return f"No cloned repo found for {repo_name}. Run GitCloneAndBranch first."
+        ws, error = require_workspace(sly_data, repo_name)
+        if error:
+            return error
+        assert ws is not None
+
+        repo_path = str(ws.root)
+        branch_name = ws.branch
         if not branch_name:
             return f"No branch recorded for {repo_name}. Run GitCloneAndBranch first."
 
@@ -113,6 +130,19 @@ class GitCommitAndPush(CodedTool):
         if sha_proc.returncode == 0:
             sly_data.setdefault("repo_commits", {})[repo_name] = sha_proc.stdout.strip()
 
+        store_tool_result(
+            sly_data,
+            repo_name,
+            "GitCommitAndPush",
+            {
+                "tool": "GitCommitAndPush",
+                "repo_name": repo_name,
+                "ok": True,
+                "phase": "commit_push",
+                "branch": branch_name,
+                "commit_sha": (sly_data.get("repo_commits") or {}).get(repo_name),
+            },
+        )
         return f"Pushed branch {branch_name} for {repo_name}."
 
     @staticmethod

@@ -124,7 +124,33 @@ sequenceDiagram
 
 ---
 
-## Slide 7 — Before vs after
+## Slide 7 — Before vs after (flow for leadership)
+
+```mermaid
+flowchart TB
+  subgraph manual [TODAY — MANUAL]
+    M1[Developer has repo with vulns] --> M2[Pull code from GitHub]
+    M2 --> M3[FOSSA scan finds CVEs]
+    M3 --> M4[Research safe versions]
+    M4 --> M5[Manually edit pom / Gradle]
+    M5 --> M6[Run tests / wait CI]
+    M6 --> M7[Open PR by hand]
+    M7 --> M8[Wait and check FOSSA rescan]
+    M8 --> M9[Repeat × 10–12 services]
+  end
+
+  subgraph agent [WITH MULTI-AGENT]
+    A1[Same repos + FOSSA findings] --> A2[One prompt or schedule]
+    A2 --> A3[Agent fetches FOSSA CVEs]
+    A3 --> A4[Clone fix branch from GitHub]
+    A4 --> A5[Plan + policy validate]
+    A5 --> A6[Apply dependency fixes]
+    A6 --> A7[Compile + test + self-heal]
+    A7 --> A8[Open draft PR automatically]
+    A8 --> A9[Verify FOSSA Security Analysis]
+    A9 --> A10[SRE reviews and merges]
+  end
+```
 
 | | Before (manual) | After (this POC) |
 |--|-----------------|------------------|
@@ -134,6 +160,7 @@ sequenceDiagram
 | PR | Manual | Draft PR with CVE summary |
 | FOSSA rescan | Wait & check UI | Automated verify gate |
 | Audit | Spreadsheets / memory | NSFlow + logs + validation output |
+| Scale | Days across many services | Hours; human only at review |
 
 ---
 

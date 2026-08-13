@@ -1,109 +1,150 @@
-"""Run Maven/Gradle tests for remediated Spring Boot services."""
+"""Run Maven/Gradle compile and test commands in the repo workspace."""
 
 from __future__ import annotations
 
-import asyncio
-import os
-import re
 import subprocess
 from typing import Any
 
 from neuro_san.interfaces.coded_tool import CodedTool
 
-from _config import MAX_TEST_HEAL_ATTEMPTS, get_repo_by_name, test_heal_attempts
+from _config import MAX_TEST_HEAL_ATTEMPTS, test_heal_attempts
 from remediation_log import report_progress
+from workspace import (
+    extract_build_error_lines,
+    format_tool_message,
+    require_workspace,
+    run_shell_command,
+    store_tool_result,
+)
 
 
-class RunJavaTests(CodedTool):
-    """Execute configured test command in the cloned repository."""
+async def _run_build_phase(
+    args: dict[str, Any],
+    sly_data: dict[str, Any],
+    *,
+    tool: str,
+    phase: str,
+    command: str,
+    sly_result_key: str,
+    timeout_seconds: int,
+    progress_label: str,
+) -> dict[str, Any]:
+    repo_name = args.get("repo_name")
+    ws, error = require_workspace(sly_data, repo_name)
+    if error:
+        return {"tool": tool, "repo_name": repo_name or "", "ok": False, "phase": phase, "message": error}
+
+    assert ws is not None
+    await report_progress(args, phase=progress_label, detail=f"`{command}` (Java {ws.java_version})")
+
+    proc = await run_shell_command(ws, command, timeout_seconds=timeout_seconds)
+    if isinstance(proc, subprocess.TimeoutExpired):
+        result = {
+            "tool": tool,
+            "repo_name": repo_name,
+            "ok": False,
+            "phase": phase,
+            "exit_code": -1,
+            "errors": [f"Timed out after {timeout_seconds}s"],
+            "command": command,
+        }
+        store_tool_result(sly_data, repo_name, tool, result)
+        sly_data.setdefault(sly_result_key, {})[repo_name] = {
+            "returncode": -1,
+            "passed": False,
+            "error_lines": result["errors"],
+        }
+        return result
+
+    combined = (proc.stdout or "") + "\n" + (proc.stderr or "")
+    error_lines = extract_build_error_lines(combined)
+    ok = proc.returncode == 0
+
+    sly_data.setdefault(sly_result_key, {})[repo_name] = {
+        "returncode": proc.returncode,
+        "stdout_tail": (proc.stdout or "")[-6000:],
+        "stderr_tail": (proc.stderr or "")[-4000:],
+        "error_lines": error_lines[:20],
+        "passed": ok,
+        "command": command,
+    }
+
+    result = {
+        "tool": tool,
+        "repo_name": repo_name,
+        "ok": ok,
+        "phase": phase,
+        "exit_code": proc.returncode,
+        "errors": error_lines[:20],
+        "command": command,
+        "log_tail": combined[-4000:],
+    }
+    store_tool_result(sly_data, repo_name, tool, result)
+    return result
+
+
+class CompileJava(CodedTool):
+    """Compile the workspace project without running tests (fast feedback after dependency changes)."""
 
     async def async_invoke(self, args: dict[str, Any], sly_data: dict[str, Any]) -> Any:
         repo_name = args.get("repo_name")
-        repo_path = (sly_data.get("repo_paths") or {}).get(repo_name)
-        if not repo_path:
-            return f"No cloned repo found for {repo_name}. Run GitCloneAndBranch first."
+        ws, error = require_workspace(sly_data, repo_name)
+        if error:
+            return error
+        assert ws is not None
 
-        repo = get_repo_by_name(repo_name)
-        if repo is None:
-            return f"Unknown repo_name: {repo_name}"
-
-        test_command = repo["build"].get("test_command", "./mvnw test")
-        java_version = repo["build"].get("java_version", "21")
-
-        await report_progress(
+        result = await _run_build_phase(
             args,
-            phase="Run tests",
-            detail=f"`{test_command}` (Java {java_version})",
+            sly_data,
+            tool="CompileJava",
+            phase="compile",
+            command=ws.compile_command,
+            sly_result_key="compile_results",
+            timeout_seconds=int(args.get("timeout_seconds") or 600),
+            progress_label="Compile",
         )
+        if result.get("message"):
+            return result["message"]
+        if result.get("ok"):
+            return f"Compile PASSED for {repo_name}."
 
-        env = os.environ.copy()
-        env["FOSSA_POC_JAVA_VERSION"] = java_version
+        result["next_hint"] = "Fix compile errors before RunJavaTests (ReadRepoFile / ApplyDependencyFix)."
+        return format_tool_message(result)
 
-        try:
-            result = await asyncio.to_thread(
-                subprocess.run,
-                test_command,
-                shell=True,
-                cwd=repo_path,
-                capture_output=True,
-                text=True,
-                env=env,
-                timeout=int(args.get("timeout_seconds") or 900),
-            )
-        except subprocess.TimeoutExpired:
-            return f"Tests timed out for {repo_name} after {args.get('timeout_seconds', 900)}s."
 
-        combined = (result.stdout or "") + "\n" + (result.stderr or "")
-        error_lines = self._extract_error_lines(combined)
+class RunJavaTests(CodedTool):
+    """Execute configured test command in the cloned repository workspace."""
 
-        sly_data.setdefault("test_results", {})[repo_name] = {
-            "returncode": result.returncode,
-            "stdout_tail": (result.stdout or "")[-6000:],
-            "stderr_tail": (result.stderr or "")[-4000:],
-            "error_lines": error_lines[:20],
-            "passed": result.returncode == 0,
-        }
+    async def async_invoke(self, args: dict[str, Any], sly_data: dict[str, Any]) -> Any:
+        repo_name = args.get("repo_name")
+        ws, error = require_workspace(sly_data, repo_name)
+        if error:
+            return error
+        assert ws is not None
 
-        if result.returncode == 0:
+        result = await _run_build_phase(
+            args,
+            sly_data,
+            tool="RunJavaTests",
+            phase="test",
+            command=ws.test_command,
+            sly_result_key="test_results",
+            timeout_seconds=int(args.get("timeout_seconds") or 900),
+            progress_label="Run tests",
+        )
+        if result.get("message"):
+            return result["message"]
+        if result.get("ok"):
             sly_data.setdefault("test_fix_attempts", {})[repo_name] = 0
             return f"Tests PASSED for {repo_name}."
 
         attempts = test_heal_attempts(sly_data, repo_name)
-        summary = "\n".join(f"  - {line}" for line in error_lines[:10]) or "  - (see build log tail in test_results)"
         if attempts >= MAX_TEST_HEAL_ATTEMPTS:
-            return (
-                f"Tests FAILED for {repo_name} (exit {result.returncode}). "
-                f"Test self-heal limit reached ({MAX_TEST_HEAL_ATTEMPTS} attempts).\n"
-                f"Key errors:\n{summary}\n\n"
-                "Escalate to human review; do not open PR."
+            result["next_hint"] = "Escalate to human review; do not open PR."
+        else:
+            result["next_hint"] = (
+                f"NEXT: Call DiagnoseTestFailures, apply a fix with ApplyDependencyFix, "
+                f"then CompileJava and RunJavaTests again "
+                f"({attempts}/{MAX_TEST_HEAL_ATTEMPTS} self-heal attempt(s) used so far)."
             )
-        return (
-            f"Tests FAILED for {repo_name} (exit {result.returncode}).\n"
-            f"Key errors:\n{summary}\n\n"
-            f"NEXT: Call DiagnoseTestFailures, reason about the cause, apply a fix with ApplyDependencyFix, "
-            f"then call RunJavaTests again "
-            f"({attempts}/{MAX_TEST_HEAL_ATTEMPTS} self-heal attempt(s) used so far)."
-        )
-
-    @staticmethod
-    def _extract_error_lines(log_text: str) -> list[str]:
-        lines: list[str] = []
-        patterns = [
-            r"\[ERROR\][^\n]+",
-            r"ClassNotFoundException[^\n]+",
-            r"NoClassDefFoundError[^\n]+",
-            r"NoSuchMethodError[^\n]+",
-            r"Failed to execute goal[^\n]+",
-            r"BUILD FAILURE[^\n]*",
-            r"Tests run:[^\n]+Failures:[1-9][^\n]*",
-        ]
-        for pattern in patterns:
-            for match in re.finditer(pattern, log_text):
-                line = match.group(0).strip()
-                if line not in lines:
-                    lines.append(line[:300])
-        if not lines:
-            for line in log_text.splitlines():
-                if "error" in line.lower() or "exception" in line.lower():
-                    lines.append(line.strip()[:300])
-        return lines
+        return format_tool_message(result)
