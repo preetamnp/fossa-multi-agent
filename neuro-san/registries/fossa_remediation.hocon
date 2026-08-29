@@ -38,9 +38,9 @@ When you receive a task:
 1. You MUST use tool calls for all FOSSA API, git, file changes, builds, and GitHub PR actions.
 2. NEVER tell the user to run git, mvn, or gh commands themselves.
 3. Process each pilot repo independently; payment-service and user-service are the POC scope.
-4. Always run tests before opening a PR. If tests fail, diagnose and self-heal (up to 3 attempts).
-5. After push: open draft PR first (trigger_fossa_scan=true) so GitHub FOSSA App scans the branch, then VerifyFossaScan (0 security vulns).
-6. CreatePullRequest draft=true — use trigger_fossa_scan=true before verify; production success requires VerifyFossaScan passed.
+4. After ValidateRemediationPlan PASSES, call RunOpenCode to apply the locked plan, test, and open a draft PR.
+5. Then VerifyFossaScan (0 security vulns). Do not merge.
+6. Use ApplyDependencyFix / git / CreatePullRequest only if RunOpenCode reports that the draft PR is missing.
 7. Report PR URLs, test status, and FOSSA verification in your final summary.
 """
     },
@@ -102,32 +102,22 @@ For the given repo_name, run this workflow:
 PHASE 1 — SETUP:
 1. LoadRepoConfig
 2. FetchFossaFindings with repo_name (fetch all vulnerabilities; licensing optional to fix)
-3. GitCloneAndBranch with repo_name only (do NOT pass branch_name — the tool assigns a unique timestamped branch)
 
-PHASE 2 — INTELLIGENT PLANNING (you decide; tools validate):
-4. PrepareRemediationContext — FOSSA findings + baseline suggestions (reference only)
-5. FetchDependencyTree — direct vs transitive dependencies
-6. ReadBuildFile or ReadRepoFile (relative_path) if you need pom.xml/build.gradle or other repo files
-7. LookupVulnerabilityFix when REMEDIATION_OSV_LOOKUP_ENABLED=true OR FOSSA reports NO_SAFE_VERSION for a package
-8. Reason about tradeoffs (prefer FOSSA completeFix over partialFix; license remove/replace optional; NO_SAFE_VERSION → LookupVulnerabilityFix or remove/replace)
-9. SubmitRemediationPlan with actions array + strategy_summary + optional deferred_issue_ids (licensing ONLY)
-10. ValidateRemediationPlan — if FAIL, revise and resubmit (max 3 attempts)
+PHASE 2 — PLAN & VALIDATE (you decide; tools enforce policy):
+3. PrepareRemediationContext — FOSSA findings + baseline suggestions (reference only)
+4. FetchDependencyTree — optional context for planning
+5. LookupVulnerabilityFix when REMEDIATION_OSV_LOOKUP_ENABLED=true OR FOSSA reports NO_SAFE_VERSION
+6. Reason about tradeoffs (prefer FOSSA completeFix over partialFix; license remove/replace optional)
+7. SubmitRemediationPlan with actions array + strategy_summary + optional deferred_issue_ids (licensing ONLY)
+8. ValidateRemediationPlan — if FAIL, revise and resubmit (max 3 attempts). Do not call RunOpenCode until this PASSES.
 
-PHASE 3 — APPLY & TEST:
-11. ApplyDependencyFix with repo_name
-12. CompileJava with repo_name (fast compile check before tests)
-13. RunJavaTests with repo_name
+PHASE 3 — OPENCODE (customer coding agent owns apply / test / git / draft PR):
+9. RunOpenCode with repo_name — applies the locked plan, runs tests, commits, pushes, opens a draft PR.
+   Do NOT call ApplyDependencyFix, CompileJava, RunJavaTests, GitCloneAndBranch, GitCommitAndPush, or CreatePullRequest unless RunOpenCode says the PR is missing.
 
-PHASE 4 — TEST SELF-HEAL (when tests fail, max 3 rounds):
-13. DiagnoseTestFailures → ReadRepoFile/ReadBuildFile/FetchDependencyTree as needed → LookupVulnerabilityFix only if OSV enabled
-14. SubmitRemediationPlan with plan_type=test_fix → ValidateRemediationPlan
-15. ApplyDependencyFix with apply_test_fixes=true → CompileJava → RunJavaTests again
-
-PHASE 5 — SHIP:
-16. GitCommitAndPush (only after tests PASSED)
-17. SummarizeRemediationForPR → SubmitPullRequestBody → CreatePullRequest draft=true trigger_fossa_scan=true (opens draft PR WITHOUT verify — triggers GitHub FOSSA scan)
-18. VerifyFossaScan — polls GitHub-imported project; skip in POC dry run; production requires 0 security vulns
-19. Report PR URL (draft PR may exist even if verify failed — do not merge until Security Analysis is green)
+PHASE 4 — FOSSA VERIFY (coded tool — not OpenCode):
+10. VerifyFossaScan — polls GitHub-imported project; skip in POC dry run; production requires 0 security vulns
+11. Report PR URL (draft PR may exist even if verify failed — do not merge until Security Analysis is green)
 
 PLANNING RULES:
 - target_version MUST come from FOSSA completeFix (preferred) / partialFix / recommended_version. Use LookupVulnerabilityFix when FOSSA says NO_SAFE_VERSION or OSV is globally enabled.
@@ -143,7 +133,6 @@ Return the PR URL when done.
       "tools": [
         "LoadRepoConfig",
         "FetchFossaFindings",
-        "GitCloneAndBranch",
         "PrepareRemediationContext",
         "FetchDependencyTree",
         "ReadRepoFile",
@@ -151,6 +140,10 @@ Return the PR URL when done.
         "LookupVulnerabilityFix",
         "SubmitRemediationPlan",
         "ValidateRemediationPlan",
+        "RunOpenCode",
+        "CreatePullRequest",
+        "VerifyFossaScan",
+        "GitCloneAndBranch",
         "ApplyDependencyFix",
         "CompileJava",
         "RunJavaTests",
@@ -158,8 +151,6 @@ Return the PR URL when done.
         "GitCommitAndPush",
         "SummarizeRemediationForPR",
         "SubmitPullRequestBody",
-        "CreatePullRequest",
-        "VerifyFossaScan",
       ]
     },
 
@@ -461,6 +452,24 @@ Return the PR URL when done.
       },
       "class": "java_build.RunJavaTests",
       "command": "Run unit tests."
+    },
+
+    {
+      "name": "RunOpenCode",
+      "function": {
+        "description": "Customer OpenCode CLI: apply the validated FOSSA plan, run tests, commit/push, and open a draft PR. Call only after ValidateRemediationPlan PASSES. Then call VerifyFossaScan.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "repo_name": { "type": "string" },
+            "model": { "type": "string", "description": "Optional OpenCode --model override (or set OPENCODE_MODEL)." },
+            "timeout_seconds": { "type": "int", "description": "OpenCode timeout (default 1200)." }
+          },
+          "required": ["repo_name"]
+        }
+      },
+      "class": "run_opencode.RunOpenCode",
+      "command": "Run OpenCode to apply the locked plan and open a draft PR."
     },
 
     {

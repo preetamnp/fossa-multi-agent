@@ -23,6 +23,7 @@ TOOL_LABELS: dict[str, str] = {
     "LookupVulnerabilityFix": "Look up vulnerability fix (OSV / Maven)",
     "SubmitRemediationPlan": "Submit remediation plan (LLM draft)",
     "ValidateRemediationPlan": "Validate remediation plan",
+    "RunOpenCode": "OpenCode: apply plan, test, draft PR",
     "ApplyDependencyFix": "Apply dependency version bumps",
     "CompileJava": "Compile Java project (skip tests)",
     "RunJavaTests": "Run Java unit tests",

@@ -56,7 +56,7 @@ class VerifyFossaScan(CodedTool):
         repo_path = (sly_data.get("repo_paths") or {}).get(repo_name)
         branch_name = (sly_data.get("repo_branches") or {}).get(repo_name)
         if not repo_path or not branch_name:
-            return f"Missing cloned repo or branch for {repo_name}. Run GitCloneAndBranch and GitCommitAndPush first."
+            return f"Missing cloned repo or branch for {repo_name}. Run RunOpenCode first (or GitCloneAndBranch)."
 
         max_wait = int(args.get("max_wait_seconds") or os.environ.get("FOSSA_VERIFY_MAX_WAIT_SECONDS") or self.DEFAULT_MAX_WAIT)
         poll_seconds = int(args.get("poll_seconds") or os.environ.get("FOSSA_VERIFY_POLL_SECONDS") or self.DEFAULT_POLL)
