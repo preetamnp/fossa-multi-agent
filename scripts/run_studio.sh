@@ -19,6 +19,9 @@ if [[ -f .env ]]; then
   set +a
 fi
 
+# shellcheck disable=SC1091
+source "${ROOT}/scripts/_llm_env.sh"
+
 export PYTHONPATH="${ROOT}/neuro-san/coded_tools/fossa_remediation:${ROOT}"
 export NEURO_SAN_SERVER_HOST="${NEURO_SAN_SERVER_HOST:-localhost}"
 export NEURO_SAN_SERVER_CONNECTION="${NEURO_SAN_SERVER_CONNECTION:-http}"
@@ -29,12 +32,8 @@ NSFLOW_PORT="${NSFLOW_PORT:-4173}"
 HEALTH_URL="http://localhost:${SERVER_PORT}/api/v1/fossa_remediation/function"
 SLY_DATA_FILE="${ROOT}/logs/nsflow_sly_data.json"
 
-if [[ -n "${MISTRAL_API_KEY:-}" ]]; then
-  export OPENAI_API_KEY="${MISTRAL_API_KEY}"
-fi
-
 if [[ -z "${OPENAI_API_KEY:-}" ]]; then
-  echo "ERROR: Set MISTRAL_API_KEY in .env before opening Studio."
+  echo "ERROR: Set DEEPSEEK_API_KEY in .env before opening Studio."
   exit 1
 fi
 
@@ -84,7 +83,7 @@ echo "   (sidebar / network picker — must match manifest.hocon)"
 echo ""
 echo "3. Open the  Sly Data  tab and paste JSON from:"
 echo "      ${SLY_DATA_FILE}"
-echo "   This sets dry_run, osv_lookup, model_name, and Mistral llm_config (required for nested agents)."
+echo "   This sets dry_run, osv_lookup, model_name, and DeepSeek llm_config (required for nested agents)."
 echo ""
 echo "4. Open the  Chat  tab and send, for example:"
 echo '      Remediate all FOSSA security vulnerabilities for payment-service.'

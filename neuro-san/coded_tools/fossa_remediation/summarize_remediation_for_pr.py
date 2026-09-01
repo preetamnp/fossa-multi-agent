@@ -20,6 +20,7 @@ class SummarizeRemediationForPR(CodedTool):
         fixes = (sly_data.get("dependency_fixes") or {}).get(repo_name) or []
         verify = (sly_data.get("fossa_verify") or {}).get(repo_name) or {}
         meta = (sly_data.get("remediation_plan_meta") or {}).get(repo_name) or {}
+        human_queue = (sly_data.get("human_review_queue") or {}).get(repo_name) or []
         branch = (sly_data.get("repo_branches") or {}).get(repo_name)
         test_result = (sly_data.get("test_results") or {}).get(repo_name) or {}
         compile_result = (sly_data.get("compile_results") or {}).get(repo_name) or {}
@@ -29,6 +30,20 @@ class SummarizeRemediationForPR(CodedTool):
             "branch": branch,
             "strategy_summary": meta.get("strategy_summary"),
             "deferred_issue_ids": meta.get("deferred_issue_ids") or [],
+            "escalated_issue_ids": meta.get("escalated_issue_ids") or [],
+            "human_review_required": [
+                {
+                    "action": item.get("action"),
+                    "group_id": item.get("group_id"),
+                    "artifact_id": item.get("artifact_id"),
+                    "current_version": item.get("current_version"),
+                    "target_version": item.get("target_version"),
+                    "replacement_coordinate": item.get("replacement_coordinate"),
+                    "risk_reason": item.get("risk_reason"),
+                    "issue_id": item.get("issue_id"),
+                }
+                for item in human_queue
+            ],
             "findings_count": len(findings),
             "vulnerabilities": [
                 {

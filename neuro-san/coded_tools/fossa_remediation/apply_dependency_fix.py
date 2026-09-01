@@ -10,6 +10,7 @@ from neuro_san.interfaces.coded_tool import CodedTool
 from _config import get_repo_by_name
 from lookup_fix import parse_maven_coordinate
 from remediation_log import report_progress
+from remediation_policy import RISK_AUTO, classify_action, load_remediation_policy
 from workspace import default_build_filename, require_workspace, resolve_relative_path, store_tool_result
 
 
@@ -52,10 +53,37 @@ class ApplyDependencyFix(CodedTool):
                 "Run PlanRemediationActions, DiagnoseTestFailures, or pass action/artifact_id/target_version."
             )
 
+        # Defense in depth: never apply human_required / blocked actions.
+        policy = load_remediation_policy()
+        safe_plan: list[dict[str, Any]] = []
+        skipped: list[str] = []
+        for item in plan:
+            classified = classify_action(item, policy)
+            if classified.get("risk") != RISK_AUTO:
+                coord = f"{classified.get('group_id')}:{classified.get('artifact_id')}"
+                skipped.append(f"{coord} ({classified.get('risk_reason') or 'human_required'})")
+                continue
+            safe_plan.append(classified)
+
+        if skipped:
+            sly_data.setdefault("apply_skipped_human", {})[repo_name] = skipped
+
+        if not safe_plan:
+            queue = (sly_data.get("human_review_queue") or {}).get(repo_name) or []
+            msg = (
+                f"No auto-safe actions to apply for {repo_name}. "
+                f"Skipped {len(skipped)} human-required change(s): " + "; ".join(skipped)
+            )
+            if queue:
+                msg += f". human_review_queue has {len(queue)} item(s)."
+            return msg
+
+        plan = safe_plan
         await report_progress(
             args,
             phase="Apply fixes",
-            detail=f"{len(plan)} action(s) in {repo_name}",
+            detail=f"{len(plan)} auto-safe action(s) in {repo_name}"
+            + (f"; skipped {len(skipped)} human-required" if skipped else ""),
         )
 
         root = ws.root
@@ -109,9 +137,13 @@ class ApplyDependencyFix(CodedTool):
                 "ok": True,
                 "phase": "apply_fix",
                 "changes": actions,
+                "skipped_human": skipped,
             },
         )
-        return f"Applied {len(actions)} planned change(s) in {repo_name}: " + "; ".join(actions)
+        message = f"Applied {len(actions)} planned change(s) in {repo_name}: " + "; ".join(actions)
+        if skipped:
+            message += f". Skipped {len(skipped)} human-required: " + "; ".join(skipped)
+        return message
 
     def _apply_maven_action(self, content: str, item: dict[str, Any]) -> tuple[str, str | None]:
         action = item.get("action")

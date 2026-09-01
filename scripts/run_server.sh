@@ -11,20 +11,18 @@ if [[ -f .env ]]; then
   set +a
 fi
 
+# shellcheck disable=SC1091
+source "${ROOT}/scripts/_llm_env.sh"
+
 export PYTHONPATH="${ROOT}/neuro-san/coded_tools/fossa_remediation:${ROOT}"
 export AGENT_MANIFEST_FILE="${ROOT}/neuro-san/registries/manifest.hocon"
 export AGENT_TOOL_PATH="${ROOT}/neuro-san/coded_tools/fossa_remediation"
 export AGENT_LLM_INFO_FILE="${ROOT}/neuro-san/registries/mistral_llm_info.hocon"
 
-# Neuro SAN OpenAI client → Mistral API
-if [[ -n "${MISTRAL_API_KEY:-}" ]]; then
-  export OPENAI_API_KEY="${MISTRAL_API_KEY}"
-fi
-
 if [[ -z "${OPENAI_API_KEY:-}" ]]; then
   echo "ERROR: OPENAI_API_KEY is not set."
-  echo "  Add MISTRAL_API_KEY to .env (recommended) or set OPENAI_API_KEY directly."
-  echo "  cp .env.example .env  # then edit with your Mistral key"
+  echo "  Add DEEPSEEK_API_KEY to .env (recommended) or set OPENAI_API_KEY directly."
+  echo "  cp .env.example .env  # then edit with your DeepSeek key"
   exit 1
 fi
 
@@ -61,7 +59,7 @@ fi
 echo "Starting Neuro SAN server on port ${PORT}..."
 echo "  AGENT_MANIFEST_FILE=${AGENT_MANIFEST_FILE}"
 echo "  AGENT_TOOL_PATH=${AGENT_TOOL_PATH}"
-echo "  OPENAI_API_KEY is set (Mistral/OpenAI client enabled)"
+echo "  OPENAI_API_KEY is set (DeepSeek/Mistral OpenAI client enabled)"
 
 source .venv/bin/activate
 python -m neuro_san.service.main_loop.server_main_loop 2>&1 | tee logs/server.log

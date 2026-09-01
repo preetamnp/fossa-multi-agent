@@ -1,10 +1,66 @@
-# Mistral + Devstral via OpenAI-compatible API (https://docs.mistral.ai/api)
-# Used with OPENAI_API_KEY / MISTRAL_API_KEY and openai_api_base below.
+# LLM registry: DeepSeek + Mistral via OpenAI-compatible APIs.
+# Credentials: DEEPSEEK_API_KEY / MISTRAL_API_KEY / OPENAI_API_KEY + OPENAI_API_BASE in .env
 
 {
   "default_config": {
-    "openai_api_base": "https://api.mistral.ai/v1",
+    "openai_api_base": "https://api.deepseek.com",
     "temperature": 0.2
+  },
+
+  "deepseek-v4-flash": {
+    "class": "openai",
+    "use_model_name": "deepseek-v4-flash",
+    "model_info_url": "https://api-docs.deepseek.com/quick_start/pricing",
+    "modalities": {
+      "input": ["text"],
+      "output": ["text"]
+    },
+    "capabilities": ["tools"],
+    "context_window_size": 1000000,
+    "max_output_tokens": 8192,
+    "knowledge_cutoff": "unknown"
+  },
+
+  "deepseek-v4-pro": {
+    "class": "openai",
+    "use_model_name": "deepseek-v4-pro",
+    "model_info_url": "https://api-docs.deepseek.com/quick_start/pricing",
+    "modalities": {
+      "input": ["text"],
+      "output": ["text"]
+    },
+    "capabilities": ["tools"],
+    "context_window_size": 1000000,
+    "max_output_tokens": 8192,
+    "knowledge_cutoff": "unknown"
+  },
+
+  "deepseek-chat": {
+    "class": "openai",
+    "use_model_name": "deepseek-chat",
+    "model_info_url": "https://api-docs.deepseek.com/quick_start/pricing",
+    "modalities": {
+      "input": ["text"],
+      "output": ["text"]
+    },
+    "capabilities": ["tools"],
+    "context_window_size": 64000,
+    "max_output_tokens": 8192,
+    "knowledge_cutoff": "unknown"
+  },
+
+  "deepseek-reasoner": {
+    "class": "openai",
+    "use_model_name": "deepseek-reasoner",
+    "model_info_url": "https://api-docs.deepseek.com/quick_start/pricing",
+    "modalities": {
+      "input": ["text"],
+      "output": ["text"]
+    },
+    "capabilities": ["tools"],
+    "context_window_size": 64000,
+    "max_output_tokens": 8192,
+    "knowledge_cutoff": "unknown"
   },
 
   "mistral-large-latest": {
@@ -48,10 +104,38 @@
     "knowledge_cutoff": "unknown"
   },
 
+  "mistral-medium-latest": {
+    "class": "openai",
+    "use_model_name": "mistral-medium-latest",
+    "model_info_url": "https://docs.mistral.ai/models",
+    "modalities": {
+      "input": ["text"],
+      "output": ["text"]
+    },
+    "capabilities": ["tools"],
+    "context_window_size": 128000,
+    "max_output_tokens": 8192,
+    "knowledge_cutoff": "unknown"
+  },
+
   "labs-devstral-small-2512": {
     "class": "openai",
     "use_model_name": "labs-devstral-small-2512",
     "model_info_url": "https://docs.mistral.ai/models/devstral-small-2",
+    "modalities": {
+      "input": ["text"],
+      "output": ["text"]
+    },
+    "capabilities": ["tools"],
+    "context_window_size": 256000,
+    "max_output_tokens": 8192,
+    "knowledge_cutoff": "unknown"
+  },
+
+  "codestral-2508": {
+    "class": "openai",
+    "use_model_name": "codestral-2508",
+    "model_info_url": "https://docs.mistral.ai/models/codestral-2508",
     "modalities": {
       "input": ["text"],
       "output": ["text"]

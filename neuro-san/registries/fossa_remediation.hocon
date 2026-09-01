@@ -14,10 +14,11 @@
   },
 
   "llm_config": {
-    "model_name": "labs-devstral-small-2512",
+    "model_name": "deepseek-v4-flash",
     "class": "openai",
-    "openai_api_base": "https://api.mistral.ai/v1",
-    "temperature": 0.0
+    "openai_api_base": "https://api.deepseek.com",
+    "temperature": 0.0,
+    "max_retries": 2
   },
 
   "max_steps": 90,
@@ -134,6 +135,8 @@ PLANNING RULES:
 - Prefer completeFix over partialFix when multiple FOSSA issues share one dependency (e.g. log4j-core → highest completeFix).
 - ALL vulnerability findings (any severity) MUST have bump_version, remove, or replace — NEVER defer security issues.
 - deferred_issue_ids is ONLY for licensing findings; the agent may skip license fixes if tests or compatibility block them.
+- ValidateRemediationPlan splits actions into AUTO vs HUMAN (config/remediation_policy.yaml): major bumps, BOMs, denylist deps, remove/replace.
+- ApplyDependencyFix ONLY auto-safe actions. Report human_review_queue; do not invent workarounds for HUMAN items.
 - actions: bump_version | remove | replace with group_id, artifact_id, target_version, reason, issue_id
 - NEVER skip ValidateRemediationPlan. NEVER open PR if tests fail.
 - Production (REMEDIATION_DRY_RUN=false): open draft PR first (trigger_fossa_scan=true), then VerifyFossaScan must report 0 security vulnerabilities before calling success.
@@ -256,7 +259,7 @@ Return the PR URL when done.
     {
       "name": "ValidateRemediationPlan",
       "function": {
-        "description": "Validate submitted plan against FOSSA facts, Maven Central, and coverage rules.",
+        "description": "Validate submitted plan against FOSSA facts, Maven Central, coverage rules, and remediation policy gates (major bumps / BOM / human-approval queue).",
         "parameters": {
           "type": "object",
           "properties": {
