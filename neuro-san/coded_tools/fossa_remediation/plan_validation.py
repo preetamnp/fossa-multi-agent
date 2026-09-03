@@ -9,6 +9,13 @@ import httpx
 
 from _config import artifacts_with_no_safe_version, is_no_safe_version, is_osv_lookup_enabled
 from lookup_fix import fossa_remediation_version, parse_fossa_source, parse_maven_coordinate
+from remediation_policy import (
+    MODE_FAIL,
+    classify_action,
+    classify_actions,
+    human_required_mode,
+    load_remediation_policy,
+)
 
 
 ALLOWED_ACTIONS = frozenset({"bump_version", "remove", "replace"})
@@ -314,4 +321,19 @@ async def validate_plan(
                     "has no action. All security findings must be fixed; only licensing may be deferred."
                 )
 
-    return normalized, errors
+    # Policy gates: annotate risk; optionally fail the whole plan (fail_run mode).
+    # hold_and_report: human_required actions still count as "addressed" (escalated, not deferred).
+    policy = load_remediation_policy()
+    classified = [classify_action(item, policy) for item in normalized]
+    _auto, human_actions = classify_actions(classified, policy)
+    mode = human_required_mode(policy)
+    if mode == MODE_FAIL and human_actions:
+        for item in human_actions:
+            coord = f"{item.get('group_id')}:{item.get('artifact_id')}"
+            errors.append(
+                f"Policy requires human approval for {coord} "
+                f"({item.get('risk_reason') or 'human_required'}). "
+                "Set on_human_required.mode=hold_and_report to auto-apply safe actions and queue the rest."
+            )
+
+    return classified, errors

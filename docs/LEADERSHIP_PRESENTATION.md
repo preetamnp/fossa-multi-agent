@@ -1,6 +1,6 @@
 # FOSSA Multi-Agent Remediation — Leadership & Customer Presentation
 
-**Format:** 12 slides · ~15 minutes · Copy each slide block into PowerPoint  
+**Format:** 13 slides · ~15 minutes · PowerPoint: `docs/FOSSA_Remediation_Leadership_Briefing.pptx`  
 **Audience:** Leadership + customer security / platform engineering  
 **POC status:** End-to-end run validated (FOSSA → fix → test → draft PR → verify)
 
@@ -35,7 +35,51 @@
 
 ---
 
-## Slide 3 — Why Not “Just FOSSA” or “Just an LLM”?
+## Slide 3 — Manual Work vs Multi-Agent (flow comparison)
+
+**Same starting point — dramatically different path to a FOSSA-clean PR**
+
+```mermaid
+flowchart TB
+  subgraph manual [TODAY — MANUAL]
+    M1[Developer has repo with vulns] --> M2[Pull code from GitHub]
+    M2 --> M3[FOSSA scan finds CVEs]
+    M3 --> M4[Research safe versions]
+    M4 --> M5[Manually edit pom / Gradle]
+    M5 --> M6[Run tests locally / wait CI]
+    M6 --> M7[Open PR by hand]
+    M7 --> M8[Wait and check FOSSA rescan]
+    M8 --> M9[Repeat × 10–12 services]
+  end
+
+  subgraph agent [WITH MULTI-AGENT]
+    A1[Same repos + FOSSA findings] --> A2[One prompt or schedule]
+    A2 --> A3[Agent fetches FOSSA CVEs]
+    A3 --> A4[Clone fix branch from GitHub]
+    A4 --> A5[Plan + policy validate]
+    A5 --> A6[Apply dependency fixes]
+    A6 --> A7[Compile + test + self-heal]
+    A7 --> A8[Open draft PR automatically]
+    A8 --> A9[Verify FOSSA Security Analysis]
+    A9 --> A10[SRE reviews and merges]
+  end
+```
+
+| | Manual today | Multi-agent POC |
+|--|--------------|-----------------|
+| Trigger | Engineer per repo | One prompt / schedule |
+| Version choice | Manual research | FOSSA + validated plan |
+| Code changes | Hand-edited build files | Policy-gated apply |
+| Tests | Manual / wait CI | Same commands, automated |
+| PR | Manual | Draft PR with CVE summary |
+| FOSSA rescan | Wait & check UI | Automated verify gate |
+| Scale | Days across 10–12 services | Hours; human only at review |
+
+**Talk track:** Left side is what every developer does today after FOSSA finds issues. Right side keeps FOSSA and GitHub as the source of truth — the multi-agent pipeline owns the repetitive middle, and SRE still owns merge.
+
+---
+
+## Slide 4 — Why Not “Just FOSSA” or “Just an LLM”?
 
 | Approach | Gap |
 |----------|-----|
@@ -47,7 +91,7 @@
 
 ---
 
-## Slide 4 — Our Solution (One Sentence)
+## Slide 5 — Our Solution (One Sentence)
 
 **An AI-orchestrated remediation pipeline that reads FOSSA findings, plans fixes, validates policy, applies changes, runs tests, opens a draft PR, and verifies FOSSA Security Analysis — with humans reviewing before merge.**
 
@@ -63,7 +107,7 @@ flowchart LR
 
 ---
 
-## Slide 5 — Architecture (What We Built)
+## Slide 6 — Architecture (What We Built)
 
 **Two-layer design: LLM decides · Python enforces**
 
@@ -79,7 +123,7 @@ flowchart LR
 
 ---
 
-## Slide 6 — End-to-End Workflow
+## Slide 7 — End-to-End Workflow
 
 **One command → draft PR**
 
@@ -96,7 +140,7 @@ flowchart LR
 
 ---
 
-## Slide 7 — Implementation Highlights
+## Slide 8 — Implementation Highlights
 
 **Technology stack**
 
@@ -113,7 +157,7 @@ flowchart LR
 
 ---
 
-## Slide 8 — Governance & Safety (Enterprise-Ready Posture)
+## Slide 9 — Governance & Safety (Enterprise-Ready Posture)
 
 | Guardrail | How |
 |-----------|-----|
@@ -127,7 +171,7 @@ flowchart LR
 
 ---
 
-## Slide 9 — Demo (Live or Recorded)
+## Slide 10 — Demo (Live or Recorded)
 
 **Trigger (natural language):**
 > *Remediate all FOSSA security vulnerabilities for payment-service. License issues may be deferred.*
@@ -147,7 +191,7 @@ flowchart LR
 
 ---
 
-## Slide 10 — Results (POC)
+## Slide 11 — Results (POC)
 
 **Demonstrated capabilities**
 
@@ -167,7 +211,7 @@ flowchart LR
 
 ---
 
-## Slide 11 — Scale Path (Phase 2)
+## Slide 12 — Scale Path (Phase 2)
 
 | POC (now) | Production target |
 |-----------|-------------------|
@@ -181,7 +225,7 @@ flowchart LR
 
 ---
 
-## Slide 12 — Ask & Next Steps
+## Slide 13 — Ask & Next Steps
 
 **For customer**
 
@@ -225,11 +269,12 @@ POC is draft-PR-only. Phase 2 adds approval gates, rate limits, and centralized 
 
 | Slide | Visual |
 |-------|--------|
-| 4 | Simple left-to-right pipeline arrow |
-| 5 | Box diagram: Orchestrator → Pipeline → Coded Tools → Gates |
-| 6 | Numbered vertical timeline (8 steps) |
-| 8 | Checkmark table (guardrails) |
-| 9 | Screenshot placeholders: NSFlow, GitHub PR, FOSSA check |
-| 11 | 2-column “Today vs Target” table |
+| 3 | **Side-by-side flow:** Manual (left) vs Multi-Agent (right) |
+| 5 | Simple left-to-right pipeline arrow |
+| 6 | Box diagram: Orchestrator → Pipeline → Coded Tools → Gates |
+| 7 | Numbered vertical timeline (8 steps) |
+| 9 | Checkmark table (guardrails) |
+| 10 | Screenshot placeholders: NSFlow, GitHub PR, FOSSA check |
+| 12 | 2-column “Today vs Target” table |
 
 *Optional screenshot sources: NSFlow Agent Communications tab, GitHub draft PR, FOSSA Security Analysis check.*

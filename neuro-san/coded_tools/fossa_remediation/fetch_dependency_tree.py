@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import asyncio
-import os
 import subprocess
 from typing import Any
 
 from neuro_san.interfaces.coded_tool import CodedTool
 
-from _config import get_repo_by_name
+from workspace import format_tool_message, require_workspace, run_argv_command, store_tool_result
 
 
 class FetchDependencyTree(CodedTool):
@@ -19,49 +17,45 @@ class FetchDependencyTree(CodedTool):
 
     async def async_invoke(self, args: dict[str, Any], sly_data: dict[str, Any]) -> Any:
         repo_name = args.get("repo_name")
-        if not repo_name:
-            return "repo_name is required."
+        ws, error = require_workspace(sly_data, repo_name)
+        if error:
+            return error
+        assert ws is not None
 
-        repo_path = (sly_data.get("repo_paths") or {}).get(repo_name)
-        if not repo_path:
-            return f"No cloned repo for {repo_name}. Run GitCloneAndBranch first."
+        if not ws.deps_command:
+            return f"Unsupported build tool: {ws.build_tool}"
 
-        repo = get_repo_by_name(repo_name)
-        if repo is None:
-            return f"Unknown repo_name: {repo_name}"
-
-        build_tool = repo["build"].get("tool", "maven")
         max_lines = int(args.get("max_lines") or self.DEFAULT_MAX_LINES)
-
-        if build_tool == "maven":
-            cmd = ["./mvnw", "-q", "dependency:tree", "-Dverbose=false"]
-        elif build_tool == "gradle":
-            cmd = ["./gradlew", "-q", "dependencies", "--configuration", "compileClasspath"]
-        else:
-            return f"Unsupported build tool: {build_tool}"
-
-        env = os.environ.copy()
-        java_home = os.environ.get("JAVA_HOME")
-        if java_home:
-            env["JAVA_HOME"] = java_home
-
-        try:
-            proc = await asyncio.to_thread(
-                subprocess.run,
-                cmd,
-                cwd=repo_path,
-                capture_output=True,
-                text=True,
-                env=env,
-                timeout=int(args.get("timeout_seconds") or 300),
-                check=False,
-            )
-        except subprocess.TimeoutExpired:
-            return f"dependency tree command timed out for {repo_name}."
+        proc = await run_argv_command(
+            ws,
+            ws.deps_command,
+            timeout_seconds=int(args.get("timeout_seconds") or 300),
+        )
+        if isinstance(proc, subprocess.TimeoutExpired):
+            result = {
+                "tool": "FetchDependencyTree",
+                "repo_name": repo_name,
+                "ok": False,
+                "phase": "dependency_tree",
+                "exit_code": -1,
+                "errors": ["dependency tree command timed out"],
+            }
+            store_tool_result(sly_data, repo_name, "FetchDependencyTree", result)
+            return format_tool_message(result)
 
         output = (proc.stdout or "") + (proc.stderr or "")
         if proc.returncode != 0:
             tail = "\n".join(output.splitlines()[-20:])
+            result = {
+                "tool": "FetchDependencyTree",
+                "repo_name": repo_name,
+                "ok": False,
+                "phase": "dependency_tree",
+                "exit_code": proc.returncode,
+                "errors": tail.splitlines()[-10:] or [f"exit {proc.returncode}"],
+                "log_tail": tail,
+            }
+            store_tool_result(sly_data, repo_name, "FetchDependencyTree", result)
             return f"dependency tree failed for {repo_name} (exit {proc.returncode}):\n{tail}"
 
         lines = output.splitlines()
@@ -70,4 +64,16 @@ class FetchDependencyTree(CodedTool):
             excerpt += f"\n... truncated ({len(lines) - max_lines} more lines)"
 
         sly_data.setdefault("dependency_trees", {})[repo_name] = excerpt
+        store_tool_result(
+            sly_data,
+            repo_name,
+            "FetchDependencyTree",
+            {
+                "tool": "FetchDependencyTree",
+                "repo_name": repo_name,
+                "ok": True,
+                "phase": "dependency_tree",
+                "line_count": len(lines),
+            },
+        )
         return f"Dependency tree for {repo_name}:\n```\n{excerpt}\n```"

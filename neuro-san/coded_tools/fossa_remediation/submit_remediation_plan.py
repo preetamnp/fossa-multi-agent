@@ -7,6 +7,7 @@ from typing import Any
 
 from neuro_san.interfaces.coded_tool import CodedTool
 
+from _config import MAX_PLAN_VALIDATION_ATTEMPTS, plan_validation_attempts
 from plan_validation import normalize_action
 
 
@@ -17,6 +18,12 @@ class SubmitRemediationPlan(CodedTool):
         repo_name = args.get("repo_name")
         if not repo_name:
             return "repo_name is required."
+
+        if plan_validation_attempts(sly_data, repo_name) >= MAX_PLAN_VALIDATION_ATTEMPTS:
+            return (
+                f"Cannot submit plan for {repo_name}: validation retry limit "
+                f"({MAX_PLAN_VALIDATION_ATTEMPTS}) reached. Escalate to human review."
+            )
 
         raw_actions = args.get("actions")
         if raw_actions is None:

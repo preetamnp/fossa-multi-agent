@@ -1,22 +1,22 @@
 # Model assignments for the FOSSA remediation agent network.
 # Actual LLM definitions live in neuro-san/registries/mistral_llm_info.hocon
+# Override at runtime with REMEDIATION_LLM_MODEL (feeds sly_data llm_config).
 
 orchestration:
-  model: mistral-small-latest
-  temperature: 0.2
-  note: Use small model for POC to avoid Mistral API 429 rate limits on free tier
+  model: deepseek-v4-flash
+  temperature: 0.0
+  note: Primary model for fossa_orchestrator + remediation_pipeline (DeepSeek V4 Flash)
   agents:
     - fossa_orchestrator
-    - fossa_analyst
-    - dispatch_coordinator
-    - remediation_reporter
+    - remediation_pipeline
 
 coding:
-  model: labs-devstral-small-2512
-  temperature: 0.1
+  model: deepseek-v4-flash
+  temperature: 0.0
+  note: Same as network llm_config (pipeline plans + tool routing)
   agents:
-    - spring_boot_dev
+    - remediation_pipeline
 
 fallback:
-  model: mistral-small-2506
-  note: Orchestrator fallback if mistral-small-latest is unavailable
+  model: deepseek-v4-pro
+  note: Optional fallback via REMEDIATION_LLM_FALLBACK for harder reasoning steps

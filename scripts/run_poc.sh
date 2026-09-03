@@ -11,17 +11,16 @@ if [[ -f .env ]]; then
   set +a
 fi
 
+# shellcheck disable=SC1091
+source "${ROOT}/scripts/_llm_env.sh"
+
 export PYTHONPATH="${ROOT}/neuro-san/coded_tools/fossa_remediation:${ROOT}"
 export AGENT_MANIFEST_FILE="${ROOT}/neuro-san/registries/manifest.hocon"
 export AGENT_TOOL_PATH="${ROOT}/neuro-san/coded_tools/fossa_remediation"
 export AGENT_LLM_INFO_FILE="${ROOT}/neuro-san/registries/mistral_llm_info.hocon"
 
-if [[ -n "${MISTRAL_API_KEY:-}" ]]; then
-  export OPENAI_API_KEY="${MISTRAL_API_KEY}"
-fi
-
 if [[ -z "${OPENAI_API_KEY:-}" ]]; then
-  echo "ERROR: Set MISTRAL_API_KEY in .env before running the POC."
+  echo "ERROR: Set DEEPSEEK_API_KEY in .env before running the POC."
   exit 1
 fi
 
@@ -46,28 +45,8 @@ echo "If the LLM refuses to call tools, use the deterministic fallback:"
 echo "  python scripts/run_deterministic_poc.py"
 echo ""
 
-# Pass llm_config in sly_data so nested agents inherit the Mistral API key from the client request.
-SLY_DATA="$(python - <<'PY'
-import json
-import os
-
-dry_run = os.environ.get("REMEDIATION_DRY_RUN", "true").strip().lower() not in {"0", "false", "no", "off"}
-osv_lookup = os.environ.get("REMEDIATION_OSV_LOOKUP_ENABLED", "false").strip().lower() in {"1", "true", "yes", "on"}
-
-print(
-    json.dumps(
-        {
-            "dry_run": dry_run,
-            "osv_lookup_enabled": osv_lookup,
-            "llm_config": {
-                "openai_api_key": os.environ["OPENAI_API_KEY"],
-                "openai_api_base": os.environ.get("OPENAI_API_BASE", "https://api.mistral.ai/v1"),
-            },
-        }
-    )
-)
-PY
-)"
+# Pass llm_config in sly_data so nested agents inherit the LLM API key from the client request.
+SLY_DATA="$(python "${ROOT}/scripts/build_sly_data.py")"
 
 python scripts/run_poc_client.py \
   --prompt "${PROMPT}" \

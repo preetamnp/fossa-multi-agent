@@ -9,24 +9,30 @@ from typing import Any
 
 from neuro_san.interfaces.coded_tool import CodedTool
 
-from _config import is_osv_lookup_enabled
+from _config import MAX_TEST_HEAL_ATTEMPTS, is_osv_lookup_enabled
 from lookup_fix import LookupVulnerabilityFix, parse_maven_coordinate
+from workspace import require_workspace, store_tool_result
 
 
 class DiagnoseTestFailures(CodedTool):
     """Parse test/build output and surefire reports; suggest fixes via pom inspection + OSV/Maven lookup."""
 
-    MAX_ATTEMPTS = 3
+    MAX_ATTEMPTS = MAX_TEST_HEAL_ATTEMPTS
 
     async def async_invoke(self, args: dict[str, Any], sly_data: dict[str, Any]) -> Any:
         repo_name = args.get("repo_name")
-        repo_path = (sly_data.get("repo_paths") or {}).get(repo_name)
-        if not repo_path:
-            return f"No cloned repo found for {repo_name}. Run GitCloneAndBranch and RunJavaTests first."
+        ws, error = require_workspace(sly_data, repo_name)
+        if error:
+            return error
+        assert ws is not None
+        repo_path = str(ws.root)
 
         test_result = (sly_data.get("test_results") or {}).get(repo_name)
+        compile_result = (sly_data.get("compile_results") or {}).get(repo_name)
+        if not test_result and compile_result and not compile_result.get("passed"):
+            test_result = compile_result
         if not test_result:
-            return f"No test_results for {repo_name}. Run RunJavaTests first."
+            return f"No test_results or failed compile_results for {repo_name}. Run CompileJava or RunJavaTests first."
 
         if test_result.get("returncode") == 0:
             return f"Tests already passed for {repo_name}. No diagnosis needed."
@@ -103,9 +109,22 @@ class DiagnoseTestFailures(CodedTool):
                 "### Next steps for agent",
                 "1. Reason about the errors above.",
                 "2. Call ApplyDependencyFix with apply_test_fixes=true OR pass action/group_id/artifact_id/target_version.",
-                "3. Call RunJavaTests again.",
+                "3. Call CompileJava, then RunJavaTests again.",
                 "4. Repeat up to 3 times; only GitCommitAndPush + CreatePullRequest after tests pass.",
             ]
+        )
+        store_tool_result(
+            sly_data,
+            repo_name,
+            "DiagnoseTestFailures",
+            {
+                "tool": "DiagnoseTestFailures",
+                "repo_name": repo_name,
+                "ok": True,
+                "phase": "diagnose",
+                "attempt": attempt,
+                "suggested_count": len(suggested),
+            },
         )
         return "\n".join(lines)
 

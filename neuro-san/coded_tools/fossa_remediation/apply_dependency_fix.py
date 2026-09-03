@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
 from typing import Any
 
 from neuro_san.interfaces.coded_tool import CodedTool
@@ -11,6 +10,8 @@ from neuro_san.interfaces.coded_tool import CodedTool
 from _config import get_repo_by_name
 from lookup_fix import parse_maven_coordinate
 from remediation_log import report_progress
+from remediation_policy import RISK_AUTO, classify_action, load_remediation_policy
+from workspace import default_build_filename, require_workspace, resolve_relative_path, store_tool_result
 
 
 class ApplyDependencyFix(CodedTool):
@@ -18,9 +19,10 @@ class ApplyDependencyFix(CodedTool):
 
     async def async_invoke(self, args: dict[str, Any], sly_data: dict[str, Any]) -> Any:
         repo_name = args.get("repo_name")
-        repo_path = (sly_data.get("repo_paths") or {}).get(repo_name)
-        if not repo_path:
-            return f"No cloned repo found for {repo_name}. Run GitCloneAndBranch first."
+        ws, error = require_workspace(sly_data, repo_name)
+        if error:
+            return error
+        assert ws is not None
 
         repo = get_repo_by_name(repo_name)
         if repo is None:
@@ -51,20 +53,50 @@ class ApplyDependencyFix(CodedTool):
                 "Run PlanRemediationActions, DiagnoseTestFailures, or pass action/artifact_id/target_version."
             )
 
+        # Defense in depth: never apply human_required / blocked actions.
+        policy = load_remediation_policy()
+        safe_plan: list[dict[str, Any]] = []
+        skipped: list[str] = []
+        for item in plan:
+            classified = classify_action(item, policy)
+            if classified.get("risk") != RISK_AUTO:
+                coord = f"{classified.get('group_id')}:{classified.get('artifact_id')}"
+                skipped.append(f"{coord} ({classified.get('risk_reason') or 'human_required'})")
+                continue
+            safe_plan.append(classified)
+
+        if skipped:
+            sly_data.setdefault("apply_skipped_human", {})[repo_name] = skipped
+
+        if not safe_plan:
+            queue = (sly_data.get("human_review_queue") or {}).get(repo_name) or []
+            msg = (
+                f"No auto-safe actions to apply for {repo_name}. "
+                f"Skipped {len(skipped)} human-required change(s): " + "; ".join(skipped)
+            )
+            if queue:
+                msg += f". human_review_queue has {len(queue)} item(s)."
+            return msg
+
+        plan = safe_plan
         await report_progress(
             args,
             phase="Apply fixes",
-            detail=f"{len(plan)} action(s) in {repo_name}",
+            detail=f"{len(plan)} auto-safe action(s) in {repo_name}"
+            + (f"; skipped {len(skipped)} human-required" if skipped else ""),
         )
 
-        root = Path(repo_path)
-        build_tool = repo["build"].get("tool", "maven")
+        root = ws.root
+        build_tool = ws.build_tool
         actions: list[str] = []
 
         if build_tool == "maven":
-            pom = root / "pom.xml"
+            pom_rel = ws.dependency_files[0] if ws.dependency_files else default_build_filename(build_tool)
+            pom, pom_error = resolve_relative_path(root, pom_rel)
+            if pom_error or pom is None:
+                return pom_error or f"{pom_rel} path invalid"
             if not pom.exists():
-                return f"pom.xml not found in {repo_path}"
+                return f"{pom_rel} not found in workspace for {repo_name}"
             content = pom.read_text(encoding="utf-8")
             updated = content
             for item in plan:
@@ -74,9 +106,12 @@ class ApplyDependencyFix(CodedTool):
             if updated != content:
                 pom.write_text(updated, encoding="utf-8")
         elif build_tool == "gradle":
-            gradle = root / "build.gradle"
+            gradle_rel = ws.dependency_files[0] if ws.dependency_files else default_build_filename(build_tool)
+            gradle, gradle_error = resolve_relative_path(root, gradle_rel)
+            if gradle_error or gradle is None:
+                return gradle_error or f"{gradle_rel} path invalid"
             if not gradle.exists():
-                return f"build.gradle not found in {repo_path}"
+                return f"{gradle_rel} not found in workspace for {repo_name}"
             content = gradle.read_text(encoding="utf-8")
             updated = content
             for item in plan:
@@ -92,7 +127,23 @@ class ApplyDependencyFix(CodedTool):
             return f"No dependency changes applied for {repo_name}. Plan may already be satisfied."
 
         sly_data.setdefault("dependency_fixes", {})[repo_name] = actions
-        return f"Applied {len(actions)} planned change(s) in {repo_name}: " + "; ".join(actions)
+        store_tool_result(
+            sly_data,
+            repo_name,
+            "ApplyDependencyFix",
+            {
+                "tool": "ApplyDependencyFix",
+                "repo_name": repo_name,
+                "ok": True,
+                "phase": "apply_fix",
+                "changes": actions,
+                "skipped_human": skipped,
+            },
+        )
+        message = f"Applied {len(actions)} planned change(s) in {repo_name}: " + "; ".join(actions)
+        if skipped:
+            message += f". Skipped {len(skipped)} human-required: " + "; ".join(skipped)
+        return message
 
     def _apply_maven_action(self, content: str, item: dict[str, Any]) -> tuple[str, str | None]:
         action = item.get("action")

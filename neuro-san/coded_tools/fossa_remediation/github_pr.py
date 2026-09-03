@@ -141,6 +141,22 @@ class CreatePullRequest(CodedTool):
         if meta.get("strategy_summary"):
             lines.extend(["", "### Agent strategy", meta["strategy_summary"]])
 
+        human_queue = (sly_data.get("human_review_queue") or {}).get(repo_name) or []
+        if human_queue:
+            lines.extend(
+                [
+                    "",
+                    "### Requires human approval (not auto-applied)",
+                    "These changes were blocked by remediation policy (breaking / BOM / denylist):",
+                    "",
+                ]
+            )
+            for item in human_queue:
+                coord = f"{item.get('group_id')}:{item.get('artifact_id')}"
+                detail = item.get("target_version") or item.get("replacement_coordinate") or item.get("action")
+                reason = item.get("risk_reason") or "human_required"
+                lines.append(f"- `{coord}` → `{detail}` — {reason}")
+
         verify = (sly_data.get("fossa_verify") or {}).get(repo_name) or {}
         if verify.get("passed"):
             lines.extend(

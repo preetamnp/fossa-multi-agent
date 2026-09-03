@@ -21,7 +21,14 @@ class FetchFossaFindings(CodedTool):
     async def async_invoke(self, args: dict[str, Any], sly_data: dict[str, Any]) -> Any:
         repo_name = args.get("repo_name")
         severity = args.get("severity") or ["critical", "high", "medium"]
-        max_count = int(args.get("max_count") or 50)
+        # Never let the LLM truncate below the default — partial findings cause
+        # incomplete plans (e.g. missing SnakeYAML) and broken Spring Boot tests.
+        requested = args.get("max_count")
+        try:
+            max_count = int(requested) if requested is not None else 50
+        except (TypeError, ValueError):
+            max_count = 50
+        max_count = max(max_count, 50)
         categories = args.get("categories") or list(self.DEFAULT_CATEGORIES)
 
         repos = [get_repo_by_name(repo_name)] if repo_name else load_repos_config()
