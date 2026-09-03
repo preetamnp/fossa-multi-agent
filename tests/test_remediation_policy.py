@@ -46,6 +46,28 @@ class RemediationPolicyTests(unittest.TestCase):
         self.assertEqual(classified["risk"], RISK_HUMAN)
         self.assertIn("major version bump", classified["risk_reason"])
 
+    def test_date_style_version_is_not_major_bump(self) -> None:
+        action = {
+            "action": "bump_version",
+            "group_id": "org.json",
+            "artifact_id": "json",
+            "current_version": "20210307",
+            "target_version": "20231013",
+        }
+        classified = classify_action(action)
+        self.assertEqual(classified["risk"], RISK_AUTO)
+
+    def test_snakeyaml_major_bump_allowed(self) -> None:
+        action = {
+            "action": "bump_version",
+            "group_id": "org.yaml",
+            "artifact_id": "snakeyaml",
+            "current_version": "1.33",
+            "target_version": "2.0",
+        }
+        classified = classify_action(action)
+        self.assertEqual(classified["risk"], RISK_AUTO)
+
     def test_spring_boot_bom_requires_human(self) -> None:
         action = {
             "action": "bump_version",

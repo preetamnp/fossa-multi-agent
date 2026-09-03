@@ -63,12 +63,29 @@ def coordinate_of(action: dict[str, Any]) -> str:
 
 
 def parse_semver_major(version: str | None) -> int | None:
+    """Return semver major only for real X.Y(.Z) versions.
+
+    Date-style Maven versions like 20210307 / 20231013 must not count as
+    major bumps (they would always look like 8-digit 'majors').
+    """
     if not version:
         return None
-    match = re.match(r"^v?(\d+)", str(version).strip())
+    text = str(version).strip()
+    # Require at least major.minor so bare integers / date stamps are ignored.
+    match = re.match(r"^v?(\d{1,3})\.\d+", text)
     if not match:
         return None
     return int(match.group(1))
+
+
+def _allow_major_bump(action: dict[str, Any], policy: dict[str, Any]) -> bool:
+    """True when policy explicitly allows this coordinate's major bump to auto-apply."""
+    for entry in policy.get("allow_major_bump") or []:
+        if isinstance(entry, str) and entry.strip() == coordinate_of(action):
+            return True
+        if isinstance(entry, dict) and _matches_policy_entry(action, entry):
+            return True
+    return False
 
 
 def _matches_policy_entry(action: dict[str, Any], entry: dict[str, Any]) -> str | None:
@@ -137,6 +154,7 @@ def classify_action(action: dict[str, Any], policy: dict[str, Any] | None = None
             current_major is not None
             and target_major is not None
             and target_major > current_major
+            and not _allow_major_bump(item, policy)
         ):
             reasons.append(
                 f"major version bump {item.get('current_version')} → {item.get('target_version')}"

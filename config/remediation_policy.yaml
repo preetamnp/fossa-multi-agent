@@ -14,6 +14,11 @@ breaking_change_rules:
   deny_remove_without_approval: true
   deny_replace_without_approval: true
 
+# Major bumps that may still auto-apply (Spring Boot 3 needs SnakeYAML 2.x).
+allow_major_bump:
+  - coordinate: "org.yaml:snakeyaml"
+    reason: "Spring Boot 3.x requires SnakeYAML 2.x (TagInspector); FOSSA completeFix is 2.0"
+
 # Exact coordinates or globs that always need a human (even for patch bumps)
 require_human_approval:
   - coordinate: "org.springframework.boot:spring-boot-dependencies"

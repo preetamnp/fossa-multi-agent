@@ -102,7 +102,7 @@ For the given repo_name, run this workflow:
 
 PHASE 1 — SETUP:
 1. LoadRepoConfig
-2. FetchFossaFindings with repo_name (fetch all vulnerabilities; licensing optional to fix)
+2. FetchFossaFindings with repo_name only (do NOT pass max_count — tool defaults to a high floor so no CVE is truncated). Licensing optional to fix.
 3. GitCloneAndBranch with repo_name only (do NOT pass branch_name — the tool assigns a unique timestamped branch)
 
 PHASE 2 — INTELLIGENT PLANNING (you decide; tools validate):
@@ -186,7 +186,7 @@ Return the PR URL when done.
               "type": "string",
               "description": "Optional single repo; omit for all pilot repos."
             },
-            "max_count": { "type": "int", "description": "Max issues to return per repo (default 10)." }
+            "max_count": { "type": "int", "description": "Max issues to return per repo (default/minimum 50; lower values are ignored)." }
           }
         }
       },
